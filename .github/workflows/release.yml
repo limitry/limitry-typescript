@@ -9,6 +9,11 @@ on:
   push:
     tags: ["v*"]
 
+# One release at a time, so each sees the one before it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -59,8 +64,9 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           package=$(ls "$RUNNER_TEMP"/package/*.tgz)
-          if [[ "$VERSION" == *-* ]]; then
-            npm publish "$package" --access public --tag next
-          else
-            npm publish "$package" --access public
-          fi
+          name=$(node -p 'require("./package.json").name')
+          # The dist-tag by Limitry's release rules (.github/scripts/versions.mjs):
+          # latest, next, or latest-X.Y / next-X.Y for an older line.
+          tag=$(node .github/scripts/versions.mjs plan npm "$name" "$VERSION" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).npmTag')
+          npm publish "$package" --access public --tag "$tag"
+          node .github/scripts/versions.mjs await-tag "$name" "$tag" "$VERSION"
