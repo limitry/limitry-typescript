@@ -1,0 +1,38 @@
+{
+  "name": "@limitry/sdk",
+  "version": "1.0.0-rc.2",
+  "description": "Limitry API client",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://limitry.com/docs/sdk/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/limitry/limitry-typescript.git"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,66 @@
+name: Release
+
+# On a v* tag (written with the release by Limitry's own
+# repository): build and test, then publish to npm through trusted
+# publishing (no token; npm attaches provenance pointing at this
+# repository). Two jobs, so no dependency's code runs where the
+# credential exists.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: { { checkout } }
+      - uses: { { mise } }
+      - name: Version from the tag (v1.2.3 → 1.2.3)
+        id: version
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF' is not v<semver>."; exit 1
+          fi
+          test "$(node -p 'require("./package.json").version')" = "$version" || { echo "::error::package.json is not $version."; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: mkdir -p "$RUNNER_TEMP/package" && npm pack --pack-destination "$RUNNER_TEMP/package"
+      - uses: { { upload } }
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: { { checkout } }
+      - uses: { { mise } }
+      - uses: { { download } }
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package/
+      - name: Publish to npm (trusted publishing)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          package=$(ls "$RUNNER_TEMP"/package/*.tgz)
+          if [[ "$VERSION" == *-* ]]; then
+            npm publish "$package" --access public --tag next
+          else
+            npm publish "$package" --access public
+          fi
