@@ -85,7 +85,7 @@ idempotency key, so a retried request happens once.
 ## Links
 
 - [Website](https://limitry.com)
-- [TypeScript SDK guide](https://limitry.com/docs/sdk/)
+- [TypeScript SDK guide](https://limitry.com/docs/typescript/)
 - [API reference](https://limitry.com/docs/reference/)
 - [Changelog](https://github.com/limitry/limitry-typescript/blob/main/CHANGELOG.md)
 - [Discord](https://limitry.com/discord)

@@ -1,6 +1,6 @@
 {
   "name": "@limitry/sdk",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "description": "Limitry API client",
   "type": "module",
   "exports": {
@@ -28,7 +28,7 @@
     "vitest": "4.1.11"
   },
   "license": "Apache-2.0",
-  "homepage": "https://limitry.com/docs/sdk/",
+  "homepage": "https://limitry.com/docs/typescript/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/limitry/limitry-typescript.git"
