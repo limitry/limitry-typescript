@@ -79,6 +79,23 @@ export type Held = {
   extend(ttlSeconds?: number): Promise<void>;
 };
 
+/**
+ * A refusal in the CLI's words, naming the limit rather than its id:
+ * "Refused by AI replies per day: 0 replies left, resets …. Try again in
+ * 42 s."
+ */
+function refusal(decision: Decision | null): string {
+  const id = decision?.reason?.limit ?? null;
+  const limit = decision?.remaining.find((r) => r.limit === id);
+  const retry =
+    decision?.retryAfterSeconds != null
+      ? ` Try again in ${decision.retryAfterSeconds} s.`
+      : "";
+  if (!limit) return `Refused: limit ${id ?? "(unknown)"} is used up.${retry}`;
+  const resets = limit.resetsAt ? `, resets ${limit.resetsAt}` : "";
+  return `Refused by ${limit.name}: ${limit.remaining} ${limit.unit} left${resets}.${retry}`;
+}
+
 /** Not allowed: a limit is used up — or Limitry is unreachable and a limit fails closed. */
 export class LimitExceeded extends Error {
   readonly reason: "limit_exceeded" | "too_many_reservations" | "unavailable";
@@ -94,7 +111,7 @@ export class LimitExceeded extends Error {
         ? "Limitry could not be reached and a limit denies when unreachable"
         : reason === "too_many_reservations"
           ? "Too many open reservations for this subject"
-          : `Limit ${decision?.reason?.limit ?? ""} exceeded`.trim(),
+          : refusal(decision),
     );
     this.name = "LimitExceeded";
     this.reason = reason;

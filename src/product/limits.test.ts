@@ -72,6 +72,10 @@ describe("guard", () => {
       limit: "lim_a",
       retryAfterSeconds: 42,
     });
+    // The limit by name, as the CLI says it, not its id.
+    expect(error.message).toBe(
+      "Refused by A: 0 units left. Try again in 42 s.",
+    );
     expect(work).toHaveBeenCalledTimes(1);
   });
 

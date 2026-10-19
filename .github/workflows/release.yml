@@ -47,7 +47,9 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Longer than the wait for npm to show the tag (versions.mjs
+    # await-tag, 15 minutes): npm's processing can take that long.
+    timeout-minutes: 25
     environment: npm
     permissions:
       contents: read
