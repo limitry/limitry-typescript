@@ -1,3 +1,4 @@
+import { apiErrorFrom } from "../errors.ts";
 import type { BaseClient, Schemas } from "../index.ts";
 
 /**
@@ -73,27 +74,31 @@ export type HoldRequest = {
 };
 
 export type Held = {
-  /** The cost actually used — committed when the work returns. Default: the estimate. */
+  /**
+   * The cost actually used — committed when the work returns. Default: the
+   * estimate. A whole number from 0 to 1,000,000,000, as the API commits:
+   * anything else throws a RangeError here, in your code, rather than a
+   * commit the API refuses after the work (whose usage would go uncounted).
+   */
   cost(units: number): void;
-  /** Keep the hold for longer work: it expires `ttlSeconds` from now. */
+  /**
+   * Keep the hold for longer work: it expires `ttlSeconds` from now
+   * (default 300, 1 to 3600). Throws the API's error, such as for a hold
+   * that already expired.
+   */
   extend(ttlSeconds?: number): Promise<void>;
 };
 
-/**
- * A refusal in the CLI's words, naming the limit rather than its id:
- * "Refused by AI replies per day: 0 replies left, resets …. Try again in
- * 42 s."
- */
-function refusal(decision: Decision | null): string {
-  const id = decision?.reason?.limit ?? null;
-  const limit = decision?.remaining.find((r) => r.limit === id);
-  const retry =
-    decision?.retryAfterSeconds != null
-      ? ` Try again in ${decision.retryAfterSeconds} s.`
-      : "";
-  if (!limit) return `Refused: limit ${id ?? "(unknown)"} is used up.${retry}`;
-  const resets = limit.resetsAt ? `, resets ${limit.resetsAt}` : "";
-  return `Refused by ${limit.name}: ${limit.remaining} ${limit.unit} left${resets}.${retry}`;
+/** The largest cost a commit takes. */
+const MAX_COST = 1_000_000_000;
+
+function checkedCost(units: number): number {
+  if (!Number.isInteger(units) || units < 0 || units > MAX_COST) {
+    throw new RangeError(
+      `held.cost(${units}): the cost must be a whole number from 0 to ${MAX_COST}`,
+    );
+  }
+  return units;
 }
 
 /** Not allowed: a limit is used up — or Limitry is unreachable and a limit fails closed. */
@@ -109,9 +114,8 @@ export class LimitExceeded extends Error {
     super(
       reason === "unavailable"
         ? "Limitry could not be reached and a limit denies when unreachable"
-        : reason === "too_many_reservations"
-          ? "Too many open reservations for this subject"
-          : refusal(decision),
+        : // The API's own sentence (reason.message), one wording everywhere.
+          (decision?.reason?.message ?? "Refused"),
     );
     this.name = "LimitExceeded";
     this.reason = reason;
@@ -310,7 +314,12 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       };
       const idempotencyKey = crypto.randomUUID();
       const decision = await check(body, idempotencyKey);
-      const unmetered: Held = { cost: () => {}, extend: async () => {} };
+      const unmetered: Held = {
+        // Checked even unmetered: the mistake shows whether or not
+        // Limitry answered.
+        cost: (units) => void checkedCost(units),
+        extend: async () => {},
+      };
       if (decision === UNREACHABLE || decision === TIMED_OUT) {
         const unheard = () =>
           decision === TIMED_OUT
@@ -334,14 +343,19 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       let used = estimate;
       const held: Held = {
         cost(units) {
-          used = units;
+          used = checkedCost(units);
         },
         async extend(ttlSeconds) {
-          await client.POST("/reservations/{reservationId}/extend", {
-            params: { path: { reservationId: id } },
-            body: ttlSeconds ? { ttlSeconds } : {},
-            signal: AbortSignal.timeout(timeoutMs),
-          });
+          // Passed as given: the API refuses a bad one (0, past 3600).
+          const { error, response } = await client.POST(
+            "/reservations/{reservationId}/extend",
+            {
+              params: { path: { reservationId: id } },
+              body: ttlSeconds === undefined ? {} : { ttlSeconds },
+              signal: AbortSignal.timeout(timeoutMs),
+            },
+          );
+          if (error !== undefined) throw apiErrorFrom(error, response);
         },
       };
       let result: T;

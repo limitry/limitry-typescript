@@ -32,7 +32,9 @@ const decision = (
   Response.json({
     id: "chk_1",
     allowed,
-    reason: allowed ? null : { code: "limit_exceeded", limit: "lim_a" },
+    reason: allowed
+      ? null
+      : { code: "limit_exceeded", limit: "lim_a", message: "Refused by A." },
     remaining: [
       {
         limit: "lim_a",
@@ -72,10 +74,8 @@ describe("guard", () => {
       limit: "lim_a",
       retryAfterSeconds: 42,
     });
-    // The limit by name, as the CLI says it, not its id.
-    expect(error.message).toBe(
-      "Refused by A: 0 units left. Try again in 42 s.",
-    );
+    // The API's sentence, as it is (one wording in every client).
+    expect(error.message).toBe("Refused by A.");
     expect(work).toHaveBeenCalledTimes(1);
   });
 
@@ -248,6 +248,50 @@ describe("hold", () => {
       path: "/reservations/rsv_1/extend",
       body: { ttlSeconds: 900 },
     });
+  });
+
+  it("throws the API's error when an extend is refused", async () => {
+    const { limits } = limitsWith((path) =>
+      path === "/checks"
+        ? reserved()
+        : Response.json(
+            {
+              error: {
+                code: "invalid_request",
+                message: "This hold has expired",
+              },
+            },
+            { status: 400 },
+          ),
+    );
+    const error = await limits
+      .hold({ subject, action: "export" }, async (held) => {
+        await held.extend(900);
+      })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      name: "ApiError",
+      status: 400,
+      message: "This hold has expired",
+    });
+  });
+
+  it("refuses a cost the API would not commit, in the caller's code", async () => {
+    for (const bad of [2.5, -1, Number.NaN, 1_000_000_001]) {
+      const { limits, calls } = limitsWith((path) =>
+        path === "/checks" ? reserved() : Response.json({ id: "rsv_1" }),
+      );
+      await expect(
+        limits.hold({ subject, action: "chat" }, async (held) => {
+          held.cost(bad);
+        }),
+      ).rejects.toThrow(RangeError);
+      // Never a commit the API would refuse: the hold is released.
+      expect(calls.map((c) => c.path)).toEqual([
+        "/checks",
+        "/reservations/rsv_1/release",
+      ]);
+    }
   });
 });
 

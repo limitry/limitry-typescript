@@ -781,6 +781,11 @@ export interface components {
                 code: "limit_exceeded" | "too_many_reservations";
                 /** @example lim_3f0c… */
                 limit: string | null;
+                /**
+                 * @description The refusal in one sentence, for people and logs: show it, never parse it (its wording may change). Branch on `allowed` and `code`.
+                 * @example Refused by AI replies per day: 0 replies left, resets 2026-11-01T00:00:00.000Z. Try again in 3600 s.
+                 */
+                message: string;
             } | null;
             /** @description Every limit that applied, and what is left in its window. */
             remaining: components["schemas"]["CheckRemaining"][];
