@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createClient } from "../index.ts";
-import { createLimits, LimitExceeded } from "./limits.ts";
+import { createLimits, LimitReached, Unavailable } from "./limits.ts";
 
 type Handler = (path: string, body: unknown) => Response | Promise<Response>;
 
@@ -34,10 +34,10 @@ const decision = (
     allowed,
     reason: allowed
       ? null
-      : { code: "limit_exceeded", limit: "lim_a", message: "Refused by A." },
-    remaining: [
+      : { code: "limit_reached", limitId: "lmt_a", message: "Refused by A." },
+    limits: [
       {
-        limit: "lim_a",
+        limitId: "lmt_a",
         name: "A",
         unit: "units",
         window: "day",
@@ -64,14 +64,16 @@ describe("guard", () => {
       body: { subject, action: "run", cost: 3 },
     });
 
-    const denied = limitsWith(() => decision(false)).limits;
-    const error = await denied
+    const refused = limitsWith(() => decision(false)).limits;
+    const error = await refused
       .guard({ subject, action: "run" }, work)
       .catch((e) => e);
-    expect(error).toBeInstanceOf(LimitExceeded);
+    expect(error).toBeInstanceOf(LimitReached);
+    expect(error).not.toBeInstanceOf(Unavailable);
     expect(error).toMatchObject({
-      reason: "limit_exceeded",
-      limit: "lim_a",
+      name: "LimitReached",
+      reason: "limit_reached",
+      limitId: "lmt_a",
       retryAfterSeconds: 42,
     });
     // The API's sentence, as it is (one wording in every client).
@@ -95,10 +97,62 @@ describe("guard", () => {
     down = true;
     await expect(
       limits.guard({ subject, action: "run" }, work),
-    ).rejects.toMatchObject({
-      reason: "unavailable",
-    });
+    ).rejects.toBeInstanceOf(Unavailable);
   });
+
+  // Every way Limitry may not answer: the limit's fail mode decides —
+  // Unavailable when it fails closed, the work runs when it fails open;
+  // never LimitReached, which only a decision raises.
+  const unreachable: [string, () => Response | Promise<Response>][] = [
+    [
+      "a network error",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+    ["no answer in time", () => new Promise<Response>(() => {})],
+    ["a 500", () => new Response("oops", { status: 500 })],
+    [
+      "a 402 plan_limit_reached",
+      () =>
+        Response.json(
+          { error: { code: "plan_limit_reached", message: "past the plan" } },
+          { status: 402 },
+        ),
+    ],
+    [
+      "a 429 from the edge's flood guard",
+      () =>
+        Response.json(
+          { error: { code: "rate_limited", message: "slow down" } },
+          { status: 429, headers: { "retry-after": "1" } },
+        ),
+    ],
+  ];
+  for (const [what, failure] of unreachable) {
+    it(`treats ${what} as unavailable: closed throws Unavailable, open runs`, async () => {
+      for (const failMode of ["closed", "open"] as const) {
+        let down = false;
+        const { limits } = limitsWith(
+          () => (down ? failure() : decision(true, failMode)),
+          { timeoutMs: 50 },
+        );
+        await limits.guard({ subject, action: "run" }, async () => 1);
+        down = true;
+        const work = vi.fn(async () => "ran");
+        const outcome = await limits
+          .guard({ subject, action: "run" }, work)
+          .catch((e: unknown) => e);
+        if (failMode === "closed") {
+          expect(outcome).toBeInstanceOf(Unavailable);
+          expect(outcome).not.toBeInstanceOf(LimitReached);
+          expect(work).not.toHaveBeenCalled();
+        } else {
+          expect(outcome).toBe("ran");
+        }
+      }
+    });
+  }
 
   it("follows the fail mode when the workspace is past its plan", async () => {
     let over = false;
@@ -114,7 +168,7 @@ describe("guard", () => {
     over = true;
     await expect(
       limits.guard({ subject, action: "run" }, async () => 1),
-    ).rejects.toMatchObject({ reason: "unavailable" });
+    ).rejects.toBeInstanceOf(Unavailable);
     // Never seen a closed limit: open, the work runs.
     const fresh = limitsWith(() =>
       Response.json({ error: { code: "plan_limit_reached" } }, { status: 402 }),
@@ -154,22 +208,22 @@ describe("guard", () => {
   });
 });
 
-describe("hold", () => {
+describe("reserve", () => {
   const reserved = () =>
     decision(true, "open", {
       reservation: { id: "rsv_1", expiresAt: "2026-10-05T00:05:00Z" },
     });
 
-  it("commits what the work reported — or the estimate", async () => {
+  it("commits what the work reported — or the reserved cost", async () => {
     const { limits, calls } = limitsWith((path) =>
       path === "/checks"
         ? reserved()
         : Response.json({ id: "rsv_1", status: "committed" }),
     );
-    const out = await limits.hold(
-      { subject, action: "chat", estimate: 4000 },
-      async (held) => {
-        held.cost(1310);
+    const out = await limits.reserve(
+      { subject, action: "chat", cost: 4000 },
+      async (reservation) => {
+        reservation.cost(1310);
         return "answer";
       },
     );
@@ -179,8 +233,8 @@ describe("hold", () => {
       path: "/reservations/rsv_1/commit",
       body: { cost: 1310 },
     });
-    await limits.hold(
-      { subject, action: "chat", estimate: 50 },
+    await limits.reserve(
+      { subject, action: "chat", cost: 50 },
       async () => "x",
     );
     expect(calls[3]).toMatchObject({
@@ -189,14 +243,14 @@ describe("hold", () => {
     });
   });
 
-  it("releases the hold when the work fails, and rethrows", async () => {
+  it("releases the reservation when the work fails, and rethrows", async () => {
     const { limits, calls } = limitsWith((path) =>
       path === "/checks"
         ? reserved()
         : Response.json({ id: "rsv_1", status: "released" }),
     );
     await expect(
-      limits.hold({ subject, action: "chat" }, async () => {
+      limits.reserve({ subject, action: "chat" }, async () => {
         throw new Error("model down");
       }),
     ).rejects.toThrow("model down");
@@ -206,7 +260,7 @@ describe("hold", () => {
     ]);
   });
 
-  it("releases a hold granted to a check that timed out, once the work is done", async () => {
+  it("releases a reservation made by a check that timed out, once the work is done", async () => {
     let checks = 0;
     const { limits, calls } = limitsWith(
       (path) => {
@@ -223,8 +277,8 @@ describe("hold", () => {
       },
       { timeoutMs: 20 },
     );
-    const ran = await limits.hold(
-      { subject, action: "run", estimate: 2 },
+    const ran = await limits.reserve(
+      { subject, action: "run", cost: 2 },
       async () => "ran unmetered",
     );
     expect(ran).toBe("ran unmetered");
@@ -235,14 +289,14 @@ describe("hold", () => {
     expect(calls.at(-1)?.path).toBe("/reservations/rsv_late/release");
   });
 
-  it("extends a hold for long work", async () => {
+  it("extends a reservation for long work", async () => {
     const { limits, calls } = limitsWith((path) =>
       path === "/checks"
         ? reserved()
         : Response.json({ id: "rsv_1", status: "held" }),
     );
-    await limits.hold({ subject, action: "export" }, async (held) => {
-      await held.extend(900);
+    await limits.reserve({ subject, action: "export" }, async (reservation) => {
+      await reservation.extend(900);
     });
     expect(calls[1]).toMatchObject({
       path: "/reservations/rsv_1/extend",
@@ -258,21 +312,21 @@ describe("hold", () => {
             {
               error: {
                 code: "invalid_request",
-                message: "This hold has expired",
+                message: "This reservation has expired",
               },
             },
             { status: 400 },
           ),
     );
     const error = await limits
-      .hold({ subject, action: "export" }, async (held) => {
-        await held.extend(900);
+      .reserve({ subject, action: "export" }, async (reservation) => {
+        await reservation.extend(900);
       })
       .catch((e: unknown) => e);
     expect(error).toMatchObject({
       name: "ApiError",
       status: 400,
-      message: "This hold has expired",
+      message: "This reservation has expired",
     });
   });
 
@@ -282,11 +336,11 @@ describe("hold", () => {
         path === "/checks" ? reserved() : Response.json({ id: "rsv_1" }),
       );
       await expect(
-        limits.hold({ subject, action: "chat" }, async (held) => {
-          held.cost(bad);
+        limits.reserve({ subject, action: "chat" }, async (reservation) => {
+          reservation.cost(bad);
         }),
       ).rejects.toThrow(RangeError);
-      // Never a commit the API would refuse: the hold is released.
+      // Never a commit the API would refuse: the reservation is released.
       expect(calls.map((c) => c.path)).toEqual([
         "/checks",
         "/reservations/rsv_1/release",
@@ -313,7 +367,7 @@ describe("standing", () => {
     environment: "live",
     limits: [
       {
-        limit: "lim_a",
+        limitId: "lmt_a",
         name: "A",
         subject,
         shared: false,
@@ -342,8 +396,7 @@ describe("standing", () => {
     ).toEqual(answer);
     expect(urls[0].pathname).toBe("/v1/usage/standing");
     expect(Object.fromEntries(urls[0].searchParams)).toEqual({
-      kind: "user",
-      id: "u1",
+      subject: "user:u1",
       shared: "tenant:acme,team:t1",
     });
   });
@@ -359,7 +412,7 @@ describe("standing", () => {
   });
 });
 
-describe("limitry.guard and limitry.hold", () => {
+describe("limitry.guard and limitry.reserve", () => {
   it("sit on the client itself", async () => {
     const limitry = createClient({
       token: "sk_test",
@@ -369,7 +422,7 @@ describe("limitry.guard and limitry.hold", () => {
     expect(
       await limitry.guard({ subject, action: "run" }, async () => "done"),
     ).toBe("done");
-    expect(typeof limitry.hold).toBe("function");
+    expect(typeof limitry.reserve).toBe("function");
     expect(typeof limitry.limits.list).toBe("function");
   });
 });

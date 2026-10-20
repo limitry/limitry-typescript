@@ -18,17 +18,17 @@ export function resources(client: RawClient) {
       create: /** Create a limit */
 (input: Input<"/limits", "post">, options?: RequestOptions) =>
   call<Output<"/limits", "post">>(client, {"method":"post","path":"/limits","query":[],"hasBody":true}, {  }, input, options),
+      credits: {
+        create: /** Add credits to a balance */
+(limitId: string | number, input: Input<"/limits/{limitId}/credits", "post">, options?: RequestOptions) =>
+  call<Output<"/limits/{limitId}/credits", "post">>(client, {"method":"post","path":"/limits/{limitId}/credits","query":[],"hasBody":true}, { "limitId": limitId }, input, options),
+        list: /** List a balance's credits */
+(limitId: string | number, options?: RequestOptions) =>
+  call<Output<"/limits/{limitId}/credits", "get">>(client, {"method":"get","path":"/limits/{limitId}/credits","query":[],"hasBody":false}, { "limitId": limitId }, undefined, options),
+      },
       get: /** Get a limit */
 (limitId: string | number, options?: RequestOptions) =>
   call<Output<"/limits/{limitId}", "get">>(client, {"method":"get","path":"/limits/{limitId}","query":[],"hasBody":false}, { "limitId": limitId }, undefined, options),
-      grants: {
-        create: /** Add credits to a balance */
-(limitId: string | number, input: Input<"/limits/{limitId}/grants", "post">, options?: RequestOptions) =>
-  call<Output<"/limits/{limitId}/grants", "post">>(client, {"method":"post","path":"/limits/{limitId}/grants","query":[],"hasBody":true}, { "limitId": limitId }, input, options),
-        list: /** List a balance's grants */
-(limitId: string | number, options?: RequestOptions) =>
-  call<Output<"/limits/{limitId}/grants", "get">>(client, {"method":"get","path":"/limits/{limitId}/grants","query":[],"hasBody":false}, { "limitId": limitId }, undefined, options),
-      },
       list: /** List limits */
 (input?: Input<"/limits", "get">, options?: RequestOptions) =>
   call<Output<"/limits", "get">>(client, {"method":"get","path":"/limits","query":["limit","cursor","subjectKind","action","archived"],"hasBody":false}, {  }, input, options),
@@ -60,17 +60,17 @@ export function resources(client: RawClient) {
       reset: /** Reset a subject's limits */
 (subjectKind: string | number, subjectId: string | number, input?: Input<"/subjects/{subjectKind}/{subjectId}/reset", "post">, options?: RequestOptions) =>
   call<Output<"/subjects/{subjectKind}/{subjectId}/reset", "post">>(client, {"method":"post","path":"/subjects/{subjectKind}/{subjectId}/reset","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),
-      update: /** Set a subject's anchor */
+      update: /** Set a subject's billing date */
 (subjectKind: string | number, subjectId: string | number, input: Input<"/subjects/{subjectKind}/{subjectId}", "patch">, options?: RequestOptions) =>
   call<Output<"/subjects/{subjectKind}/{subjectId}", "patch">>(client, {"method":"patch","path":"/subjects/{subjectKind}/{subjectId}","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),
     },
     usage: {
       query: /** Get a limit's usage over time */
 (input: Input<"/usage", "get">, options?: RequestOptions) =>
-  call<Output<"/usage", "get">>(client, {"method":"get","path":"/usage","query":["limitId","subjectKind","subjectId","from","to","granularity"],"hasBody":false}, {  }, input, options),
+  call<Output<"/usage", "get">>(client, {"method":"get","path":"/usage","query":["limitId","subject","from","to","granularity"],"hasBody":false}, {  }, input, options),
       standing: /** Get where a subject stands */
 (input: Input<"/usage/standing", "get">, options?: RequestOptions) =>
-  call<Output<"/usage/standing", "get">>(client, {"method":"get","path":"/usage/standing","query":["kind","id","shared"],"hasBody":false}, {  }, input, options),
+  call<Output<"/usage/standing", "get">>(client, {"method":"get","path":"/usage/standing","query":["subject","shared"],"hasBody":false}, {  }, input, options),
       subjects: /** List who is using a limit now */
 (input: Input<"/usage/subjects", "get">, options?: RequestOptions) =>
   call<Output<"/usage/subjects", "get">>(client, {"method":"get","path":"/usage/subjects","query":["limitId","limit"],"hasBody":false}, {  }, input, options),

@@ -15,33 +15,34 @@ import type { BaseClient, Schemas } from "../index.ts";
  *   );
  *
  *   // Cost known afterwards (an AI reply's cents), or "at most N at
- *   // once": hold an estimate, do the work, commit what it used —
- *   // released on failure.
- *   const answer = await limitry.hold(
- *     { subject: { kind: "user", id: user.id }, action: "ai-call", estimate: 5 },
- *     async (held) => {
+ *   // once": reserve what it will probably cost, do the work, commit
+ *   // what it used — released on failure.
+ *   const answer = await limitry.reserve(
+ *     { subject: { kind: "user", id: user.id }, action: "ai-call", cost: 5 },
+ *     async (reservation) => {
  *       const res = await callModel(prompt);
- *       held.cost(priceCents(res.usage));
+ *       reservation.cost(priceCents(res.usage));
  *       return res;
  *     },
  *   );
  *
- * A refusal throws `LimitExceeded` (with `retryAfterSeconds`). When
- * Limitry cannot be reached (an error, a 5xx, or no answer within
- * `timeoutMs`) — or the workspace is past its plan's allowance (402
- * `plan_limit_reached`) — each limit's fail mode decides: the last decision's
- * `failMode` for this subject and action is remembered in memory, and
- * `closed` refuses (`LimitExceeded` with reason `unavailable`) while
- * `open` — the default, and the answer before any decision was seen —
- * lets the work run unmetered.
+ * A refusal throws `LimitReached` (with `limitId` and
+ * `retryAfterSeconds`). When Limitry cannot be reached — an error, a 5xx,
+ * no answer within `timeoutMs`, the workspace past its plan's allowance
+ * (402 `plan_limit_reached`) or the edge's flood guard (429) — each
+ * limit's fail mode decides: the last decision's `failMode` for this
+ * subject and action is remembered in memory, and `closed` throws
+ * `Unavailable` while `open` — the default, and the answer before any
+ * decision was seen — lets the work run unmetered.
  *
- * Retries are safe (docs/product idempotency): each guard or hold sends
- * one Idempotency-Key, which the client's own retries reuse, so a check
- * counts once however often it is sent. A hold whose check timed out may
- * have been granted all the same: once the work is done, `hold` sends the
- * check again with the same key — a replay, nothing counted twice — and
- * releases the hold it finds, rather than leave it taken until it expires.
- * Commits and releases retry too (settling twice answers the same).
+ * Retries are safe (docs/product idempotency): each guard or reserve
+ * sends one Idempotency-Key, which the client's own retries reuse, so a
+ * check counts once however often it is sent. A reservation whose check
+ * timed out may have been made all the same: once the work is done,
+ * `reserve` sends the check again with the same key — a replay, nothing
+ * counted twice — and releases the reservation it finds, rather than
+ * leave it taken until it expires. Commits and releases retry too
+ * (committing or releasing twice answers the same).
  */
 
 type Decision = Schemas["CheckDecision"];
@@ -63,28 +64,29 @@ export type GuardRequest = {
   shared?: Subject[];
 };
 
-export type HoldRequest = {
+export type ReserveRequest = {
   subject: Subject;
   action: string;
-  /** What it will probably use — held until you commit the actual cost. Default 1. */
-  estimate?: number;
+  /** What it will probably use — reserved until you commit the actual cost. Default 1. */
+  cost?: number;
   shared?: Subject[];
-  /** How long the hold lasts if never settled (default 300, at most 3600). */
+  /** How long the reservation lasts if never committed or released (default 300, at most 3600). */
   ttlSeconds?: number;
 };
 
-export type Held = {
+export type Reservation = {
   /**
    * The cost actually used — committed when the work returns. Default: the
-   * estimate. A whole number from 0 to 1,000,000,000, as the API commits:
-   * anything else throws a RangeError here, in your code, rather than a
-   * commit the API refuses after the work (whose usage would go uncounted).
+   * reserved cost. A whole number from 0 to 1,000,000,000, as the API
+   * commits: anything else throws a RangeError here, in your code, rather
+   * than a commit the API refuses after the work (whose usage would go
+   * uncounted).
    */
   cost(units: number): void;
   /**
-   * Keep the hold for longer work: it expires `ttlSeconds` from now
-   * (default 300, 1 to 3600). Throws the API's error, such as for a hold
-   * that already expired.
+   * Keep the reservation for longer work: it expires `ttlSeconds` from now
+   * (default 300, 1 to 3600). Throws the API's error, such as for a
+   * reservation that already expired.
    */
   extend(ttlSeconds?: number): Promise<void>;
 };
@@ -95,33 +97,40 @@ const MAX_COST = 1_000_000_000;
 function checkedCost(units: number): number {
   if (!Number.isInteger(units) || units < 0 || units > MAX_COST) {
     throw new RangeError(
-      `held.cost(${units}): the cost must be a whole number from 0 to ${MAX_COST}`,
+      `reservation.cost(${units}): the cost must be a whole number from 0 to ${MAX_COST}`,
     );
   }
   return units;
 }
 
-/** Not allowed: a limit is used up — or Limitry is unreachable and a limit fails closed. */
-export class LimitExceeded extends Error {
-  readonly reason: "limit_exceeded" | "too_many_reservations" | "unavailable";
-  /** The limit that refused; null when unavailable or too many holds. */
-  readonly limit: string | null;
+/** Refused: a limit is reached, or the subject holds too many open reservations. */
+export class LimitReached extends Error {
+  readonly reason: "limit_reached" | "too_many_reservations";
+  /** The limit that refused; null for too many open reservations. */
+  readonly limitId: string | null;
   readonly retryAfterSeconds: number | null;
-  readonly decision: Decision | null;
+  readonly decision: Decision;
 
-  constructor(decision: Decision | null) {
-    const reason = decision?.reason?.code ?? "unavailable";
-    super(
-      reason === "unavailable"
-        ? "Limitry could not be reached and a limit denies when unreachable"
-        : // The API's own sentence (reason.message), one wording everywhere.
-          (decision?.reason?.message ?? "Refused"),
-    );
-    this.name = "LimitExceeded";
-    this.reason = reason;
-    this.limit = decision?.reason?.limit ?? null;
-    this.retryAfterSeconds = decision?.retryAfterSeconds ?? null;
+  constructor(decision: Decision) {
+    // The API's own sentence (reason.message), one wording everywhere.
+    super(decision.reason?.message ?? "Refused");
+    this.name = "LimitReached";
+    this.reason = decision.reason?.code ?? "limit_reached";
+    this.limitId = decision.reason?.limitId ?? null;
+    this.retryAfterSeconds = decision.retryAfterSeconds ?? null;
     this.decision = decision;
+  }
+}
+
+/**
+ * Limitry could not be reached (an error, a 5xx, a timeout, the plan's
+ * allowance used up, or the flood guard's 429) and a limit on this
+ * subject and action fails closed. With `open`, the work runs instead.
+ */
+export class Unavailable extends Error {
+  constructor() {
+    super("Limitry could not be reached and a limit refuses when unreachable");
+    this.name = "Unavailable";
   }
 }
 
@@ -141,7 +150,7 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
     options.failMode ?? remembered.get(key(s, action)) ?? "open";
   const remember = (s: Subject, action: string, decision: Decision) => {
     if (options.failMode) return;
-    const closed = decision.remaining.some((r) => r.failMode === "closed");
+    const closed = decision.limits.some((r) => r.failMode === "closed");
     remembered.set(key(s, action), closed ? "closed" : "open");
     if (remembered.size > 10_000) {
       remembered.delete(remembered.keys().next().value!);
@@ -149,8 +158,8 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
   };
 
   /**
-   * The decision — or UNREACHABLE (network error, 5xx, past the plan),
-   * or TIMED_OUT (no answer within `wait`).
+   * The decision — or UNREACHABLE (network error, 5xx, past the plan, the
+   * flood guard's 429), or TIMED_OUT (no answer within `wait`).
    */
   async function check(
     body: Schemas["CheckRequest"],
@@ -171,9 +180,12 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
           signal: AbortSignal.timeout(wait),
         });
         if (data) return data;
-        // Past the plan's allowance (402 plan_limit_reached): no decision
-        // — each limit's fail mode applies, as if Limitry were unreachable.
-        if (response.status === 402) return UNREACHABLE;
+        // Past the plan's allowance (402 plan_limit_reached), or stopped by
+        // the edge's flood guard (429): no decision — each limit's fail
+        // mode applies, as if Limitry were unreachable.
+        if (response.status === 402 || response.status === 429) {
+          return UNREACHABLE;
+        }
         // A 4xx is the caller's mistake (bad request, bad key): say so.
         if (response.status < 500 && error) {
           return new Error(
@@ -197,9 +209,9 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
   }
 
   /**
-   * Settling never fails the caller's work: the client retries it (the
-   * same settle answers the same), and a settle lost all the same expires
-   * by itself.
+   * Committing or releasing never fails the caller's work: the client
+   * retries it (the same commit answers the same), and one lost all the
+   * same expires by itself.
    */
   async function settle(
     id: string,
@@ -220,13 +232,13 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
         });
       }
     } catch {
-      // The hold expires on its own.
+      // The reservation expires on its own.
     }
   }
 
   /**
-   * After a hold's check timed out: ask again with the same key (a replay
-   * if Limitry decided it) and release any hold it was granted.
+   * After a reservation's check timed out: ask again with the same key (a
+   * replay if Limitry decided it) and release any reservation it made.
    */
   async function releaseUnheard(
     body: Schemas["CheckRequest"],
@@ -253,8 +265,7 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       const { data, error, response } = await client.GET("/usage/standing", {
         params: {
           query: {
-            kind: request.subject.kind,
-            id: request.subject.id,
+            subject: `${request.subject.kind}:${request.subject.id}`,
             ...(request.shared?.length
               ? {
                   shared: request.shared
@@ -284,37 +295,37 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       );
       if (decision === UNREACHABLE || decision === TIMED_OUT) {
         if (failMode(request.subject, request.action) === "closed") {
-          throw new LimitExceeded(null);
+          throw new Unavailable();
         }
         return fn();
       }
       remember(request.subject, request.action, decision);
-      if (!decision.allowed) throw new LimitExceeded(decision);
+      if (!decision.allowed) throw new LimitReached(decision);
       return fn();
     },
 
     /**
-     * Holds `estimate`, runs `fn`, then commits the cost it reported
-     * (`held.cost(n)`, default the estimate) — or releases the hold if
-     * `fn` throws, and rethrows. A concurrent limit's slot is held for
-     * exactly as long as `fn` runs.
+     * Reserves `cost`, runs `fn`, then commits the cost it reported
+     * (`reservation.cost(n)`, default the reserved cost) — or releases the
+     * reservation if `fn` throws, and rethrows. A concurrent limit's slot
+     * is taken for exactly as long as `fn` runs.
      */
-    async hold<T>(
-      request: HoldRequest,
-      fn: (held: Held) => Promise<T>,
+    async reserve<T>(
+      request: ReserveRequest,
+      fn: (reservation: Reservation) => Promise<T>,
     ): Promise<T> {
-      const estimate = request.estimate ?? 1;
+      const reserved = request.cost ?? 1;
       const body: Schemas["CheckRequest"] = {
         subject: request.subject,
         shared: request.shared,
         action: request.action,
-        cost: estimate,
+        cost: reserved,
         mode: "reserve",
         ttlSeconds: request.ttlSeconds,
       };
       const idempotencyKey = crypto.randomUUID();
       const decision = await check(body, idempotencyKey);
-      const unmetered: Held = {
+      const unmetered: Reservation = {
         // Checked even unmetered: the mistake shows whether or not
         // Limitry answered.
         cost: (units) => void checkedCost(units),
@@ -327,7 +338,7 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
             : Promise.resolve();
         if (failMode(request.subject, request.action) === "closed") {
           await unheard();
-          throw new LimitExceeded(null);
+          throw new Unavailable();
         }
         try {
           return await fn(unmetered);
@@ -337,11 +348,11 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       }
       remember(request.subject, request.action, decision);
       if (!decision.allowed || !decision.reservation) {
-        throw new LimitExceeded(decision);
+        throw new LimitReached(decision);
       }
       const id = decision.reservation.id;
-      let used = estimate;
-      const held: Held = {
+      let used = reserved;
+      const reservation: Reservation = {
         cost(units) {
           used = checkedCost(units);
         },
@@ -360,7 +371,7 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       };
       let result: T;
       try {
-        result = await fn(held);
+        result = await fn(reservation);
       } catch (error) {
         await settle(id, "release");
         throw error;

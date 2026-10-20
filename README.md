@@ -1,6 +1,6 @@
 # @limitry/sdk
 
-The Limitry TypeScript SDK puts a limit around costly work in one call: `guard` checks before your code runs, and `hold` reserves an estimate, then charges what the work actually cost. Every API operation is a typed method too.
+The Limitry TypeScript SDK puts a limit around costly work in one call: `guard` checks before your code runs, and `reserve` reserves what the work will probably cost, then charges what it actually cost. Every API operation is a typed method too.
 
 Limitry is the limits, credits and budgets layer for your software: give each of your users, teams, tenants, API keys or agents an allowance, and before any costly action one call tells your code whether it may happen.
 
@@ -19,7 +19,7 @@ key (`lim_test_…`) while you build.
 it counts one AI call against a limit such as 100 a day:
 
 ```ts
-import { createClient, LimitExceeded } from "@limitry/sdk";
+import { createClient, LimitReached } from "@limitry/sdk";
 
 const limitry = createClient(); // reads LIMITRY_API_KEY
 
@@ -29,7 +29,7 @@ try {
     () => callModel(prompt),
   );
 } catch (error) {
-  if (error instanceof LimitExceeded) {
+  if (error instanceof LimitReached) {
     console.log(`Try again in ${error.retryAfterSeconds} seconds`);
   }
 }
@@ -38,26 +38,28 @@ try {
 ## Charge what it actually cost
 
 When you only know the cost afterwards, such as an AI reply priced by
-the token, `hold` reserves an estimate (5 cents here), runs your code
-and charges what it used. If your code throws, the hold is released:
+the token, `reserve` reserves what it will probably cost (5 cents here),
+runs your code and charges what it used. If your code throws, the
+reservation is released:
 
 ```ts
 import { createClient } from "@limitry/sdk";
 
 const limitry = createClient();
 
-const answer = await limitry.hold(
-  { subject: { kind: "user", id: "usr_123" }, action: "ai-call", estimate: 5 },
-  async (held) => {
+const answer = await limitry.reserve(
+  { subject: { kind: "user", id: "usr_123" }, action: "ai-call", cost: 5 },
+  async (reservation) => {
     const response = await callModel(prompt);
-    held.cost(priceCents(response.usage)); // your prices, in cents
+    reservation.cost(priceCents(response.usage)); // your prices, in cents
     return response;
   },
 );
 ```
 
-If Limitry can't be reached, each limit's fail mode decides: `open` lets
-the work run, `closed` refuses it.
+A refusal throws `LimitReached`. If Limitry can't be reached, each
+limit's fail mode decides: `open` lets the work run, `closed` throws
+`Unavailable`.
 
 ## Everything else
 
@@ -69,9 +71,9 @@ import { createClient } from "@limitry/sdk";
 
 const limitry = createClient();
 
+// "100 units per user per day for ai-call"
 await limitry.limits.create({
-  name: "AI replies per day",
-  subjectKind: "user",
+  subject: { kind: "user" },
   action: "ai-call",
   amount: 100,
   window: "day",

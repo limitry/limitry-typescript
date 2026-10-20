@@ -13,7 +13,7 @@ export interface paths {
         put?: never;
         /**
          * Check whether a subject may act
-         * @description Asks whether `subject` may do `action` at `cost`, given every enabled limit that applies, and — in `consume` mode — uses it. Always 200 for a decision: read `allowed`; `remaining` shows what is left per limit and `retryAfterSeconds` when to try again. An `Idempotency-Key` header makes a retried check return the same decision without using twice. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
+         * @description Asks whether `subject` may do `action` at `cost`, given every enabled limit that applies, and — in `consume` mode — uses it. Always 200 for a decision, allowed or refused: read `allowed`; `limits` shows what is left on each limit and `retryAfterSeconds` when to try again. An `Idempotency-Key` header makes a retried check return the same decision without using twice. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
          */
         post: operations["checks.create"];
         delete?: never;
@@ -37,7 +37,7 @@ export interface paths {
         put?: never;
         /**
          * Create a limit
-         * @description Limits how much of an action a subject may use per window — for example 200 cents of `ai-call` a month for every `user`. Checks enforce it from then on. Names are unique among the environment's active limits. Owners and admins only, for a person's token.
+         * @description Limits how much a subject may use per window — for example 200 cents a month for every `user`. Only `subject.kind`, `amount` and `window` are needed: `action` defaults to every action (`*`), `unit` to units, and `name` to the sentence the limit reads as. Checks enforce it from then on. What it counts (subject, action, unit, window, every, start, rolling) is fixed once created. Owners and admins only, for a person's token.
          */
         post: operations["limits.create"];
         delete?: never;
@@ -65,7 +65,7 @@ export interface paths {
         head?: never;
         /**
          * Change a limit
-         * @description Changes any of a limit's fields; checks use the new rule within a minute. Owners and admins only, for a person's token.
+         * @description Changes a limit's name, amount, fail mode or whether it is enabled; checks use the new rule at once. What a limit counts (subject, action, unit, window, every, start, rolling) is fixed: a different value is refused (400) — create a new limit and archive this one. Owners and admins only, for a person's token.
          */
         patch: operations["limits.update"];
         trace?: never;
@@ -81,7 +81,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a limit
-         * @description Stops a limit: checks stop enforcing it within a minute, and it leaves the list. It is archived, not erased — its usage history and credit grants stay, and `POST /v1/limits/{limitId}/restore` brings it back. Owners and admins only, for a person's token.
+         * @description Stops a limit: checks stop enforcing it at once, and it leaves the list. It is archived, not erased — its usage history and credits stay, and `POST /v1/limits/{limitId}/restore` brings it back. Owners and admins only, for a person's token.
          */
         post: operations["limits.archive"];
         delete?: never;
@@ -90,7 +90,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/limits/{limitId}/grants": {
+    "/limits/{limitId}/credits": {
         parameters: {
             query?: never;
             header?: never;
@@ -98,16 +98,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List a balance's grants
-         * @description Credits added to subjects' balances for this limit, newest first.
+         * List a balance's credits
+         * @description Credits added to (or taken back from) subjects' balances for this limit, newest first.
          */
-        get: operations["limits.grants.list"];
+        get: operations["limits.credits.list"];
         put?: never;
         /**
          * Add credits to a balance
-         * @description Adds `amount` to one subject's balance — a limit whose window is `total`. A negative `amount` takes credits back (a refund, a chargeback) and needs a `note` saying why; the balance may go below zero, and checks are refused until it is topped up. Owners and admins, or a workspace API key; an agent asks a person (the `limit.grant` approval).
+         * @description Adds `amount` credits to one subject's balance — a limit whose window is `total`. A negative `amount` takes credits back (a refund, a chargeback) and needs a `note` saying why; the balance may go below zero, and checks are refused until more credits are added. Owners and admins, or a workspace API key; an agent asks a person (the `limit.credit` approval).
          */
-        post: operations["limits.grants.create"];
+        post: operations["limits.credits.create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -145,7 +145,7 @@ export interface paths {
         put?: never;
         /**
          * Sync limits from a list
-         * @description Makes the environment's limits match `limits`, by name: creates the missing, changes those that differ (an omitted field means its default) and, with `archiveMissing`, archives active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list first, and a problem anywhere changes nothing (400, each problem in `details`); then it writes every change at once. `dryRun` answers the plan without writing. For keeping limits in a file in your repository (`limitry sync`). Owners and admins only, for a person's token.
+         * @description Makes the environment's limits match `limits`, by name: creates the missing, changes those that differ (an omitted field means its default) and, with `archiveMissing`, archives active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list first, and a problem anywhere changes nothing (400, each problem in `details`); then it writes every change at once. What a limit counts is fixed: a different subject, action, unit or window under an existing name is refused until the entry is renamed. `preview` answers what it would do without writing. For keeping limits in a file in your repository (`limitry sync`). Owners and admins only, for a person's token.
          */
         post: operations["limits.sync"];
         delete?: never;
@@ -165,7 +165,7 @@ export interface paths {
         put?: never;
         /**
          * Commit a reservation
-         * @description Settles a hold with the ACTUAL amount used (`cost`): less than held gives the rest back at once; more is charged in full — the work happened. A commit after the hold expired still charges `cost`. Repeating a commit answers the same. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
+         * @description Commits a reservation with the ACTUAL amount used (`cost`): less than reserved gives the rest back at once; more is charged in full — the work happened. A commit after the reservation expired still charges `cost`. Repeating a commit answers the same. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
          */
         post: operations["reservations.commit"];
         delete?: never;
@@ -185,7 +185,7 @@ export interface paths {
         put?: never;
         /**
          * Extend a reservation
-         * @description Keeps a hold for longer work: it now expires `ttlSeconds` from now (default 300, at most 3600) — call it again as a heartbeat. Only a held reservation can be extended. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
+         * @description Keeps a reservation for longer work: it now expires `ttlSeconds` from now (default 300, at most 3600) — call it again as a heartbeat. Only an open reservation can be extended. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
          */
         post: operations["reservations.extend"];
         delete?: never;
@@ -205,7 +205,7 @@ export interface paths {
         put?: never;
         /**
          * Release a reservation
-         * @description Gives the whole hold back — the work did not happen. Repeating a release answers the same; releasing a committed reservation is refused. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
+         * @description Gives the whole reservation back — the work did not happen. Repeating a release answers the same; releasing a committed reservation is refused. Its API-key check is cached briefly for speed: a revoked key can keep working here for up to 60 seconds.
          */
         post: operations["reservations.release"];
         delete?: never;
@@ -223,7 +223,7 @@ export interface paths {
         };
         /**
          * Get a subject
-         * @description A subject's anchor: when its `anchor` limits' periods start from. A subject is yours (a user, a team, an agent) and exists once a check names it.
+         * @description A subject's billing date: when its `billing_date` limits' periods start from. A subject is yours (a user, a team, an agent) and exists once a check names it.
          */
         get: operations["subjects.get"];
         put?: never;
@@ -232,8 +232,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Set a subject's anchor
-         * @description Sets when a subject's `anchor` limits' periods start from: typically its subscription's start date, from your billing system's webhook, so its allowance refills on its own billing day (monthly for an annual plan, too). Owners and admins only, for a person's token.
+         * Set a subject's billing date
+         * @description Sets when a subject's `billing_date` limits' periods start from: typically its subscription's start date, from your billing system's webhook, so its allowance resets on its own billing day (monthly for an annual plan, too). Owners and admins only, for a person's token.
          */
         patch: operations["subjects.update"];
         trace?: never;
@@ -249,7 +249,7 @@ export interface paths {
         put?: never;
         /**
          * Reset a subject's limits
-         * @description Refills one limit on a subject (`limitId`), or every limit on it (`{}`), at once: for goodwill, a promotion or support. The schedule doesn't move: the next refill is still the usual one. A balance goes back to its amount; a concurrent limit is skipped. Send an Idempotency-Key and a repeat resets once. Owners and admins only, for a person's token.
+         * @description Resets one limit on a subject (`limitId`), or every limit on it (`{}`), at once: for goodwill, a promotion or support. The schedule doesn't move: the next reset is still the usual one. A balance goes back to its amount; a concurrent limit is skipped. Send an Idempotency-Key and a repeat resets once. Owners and admins only, for a person's token.
          */
         post: operations["subjects.reset"];
         delete?: never;
@@ -267,7 +267,7 @@ export interface paths {
         };
         /**
          * Get a limit's usage over time
-         * @description Units used, checks allowed and denied for one limit — across all subjects, or one (`subjectKind` + `subjectId`) — per hour or per day (UTC), every bucket in the range included. Up to about a minute behind live checks. Default: the last 30 days, by day.
+         * @description Units used, checks allowed and refused for one limit — across all subjects, or one (`subject`, as `kind:id`) — per hour or per day (UTC), every bucket in the range included. Up to about a minute behind live checks. Default: the last 30 days, by day.
          */
         get: operations["usage.query"];
         put?: never;
@@ -287,7 +287,7 @@ export interface paths {
         };
         /**
          * Get where a subject stands
-         * @description Every enabled limit on one subject — and on its shared subjects (`shared`, comma-separated `kind:id`, such as `team:team_42`) — with what is used, what is left and when it resets, exact as of now. For showing an end user where they stand: call it from your server with your key, never from a browser. Not a check: nothing is counted. A subject with no limit here answers an empty `limits` list.
+         * @description Every enabled limit on one subject (`subject`, as `kind:id`, such as `user:usr_123`) — and on its shared subjects (`shared`, comma-separated `kind:id`, such as `team:team_42`) — with what is used, what is left and when it resets, exact as of now. For showing an end user where they stand: call it from your server with your key, never from a browser. Not a check: nothing is counted. A subject with no limit here answers an empty `limits` list.
          */
         get: operations["usage.standing"];
         put?: never;
@@ -307,7 +307,7 @@ export interface paths {
         };
         /**
          * List who is using a limit now
-         * @description A limit's subjects in its CURRENT window, most used first: units used, what is left, how many checks were denied — `over` when any were. Up to about a minute behind live checks.
+         * @description A limit's subjects in its CURRENT window, most used first: units used, what is left, and how many checks it refused. Up to about a minute behind live checks.
          */
         get: operations["usage.subjects"];
         put?: never;
@@ -775,21 +775,21 @@ export interface components {
             allowed: boolean;
             /** @example chk_9d2e… */
             id: string;
-            /** @description Why not, when `allowed` is false: a limit is used up (`limit` names it), or the subject already holds the most open reservations (1,000). */
+            /** @description Every limit that applied, and what is left on each (`limits[0].remaining`). */
+            limits: components["schemas"]["CheckLimit"][];
+            /** @description Why it was refused, when `allowed` is false: `limit_reached` — a limit is used up (`limitId` names it) — or `too_many_reservations` — the subject already holds the most open reservations (1,000). */
             reason: {
                 /** @enum {string} */
-                code: "limit_exceeded" | "too_many_reservations";
-                /** @example lim_3f0c… */
-                limit: string | null;
+                code: "limit_reached" | "too_many_reservations";
+                /** @example lmt_3f0c… */
+                limitId: string | null;
                 /**
                  * @description The refusal in one sentence, for people and logs: show it, never parse it (its wording may change). Branch on `allowed` and `code`.
                  * @example Refused by AI replies per day: 0 replies left, resets 2026-11-01T00:00:00.000Z. Try again in 3600 s.
                  */
                 message: string;
             } | null;
-            /** @description Every limit that applied, and what is left in its window. */
-            remaining: components["schemas"]["CheckRemaining"][];
-            /** @description With `mode: reserve`, when allowed: the hold — commit or release it before `expiresAt`, or it releases itself. */
+            /** @description With `mode: reserve`, when allowed: the reservation — commit or release it before `expiresAt`, or it releases itself. */
             reservation?: {
                 expiresAt: string;
                 /** @example rsv_WyJ1c2VyIiwidV80MiJd_9f… */
@@ -798,14 +798,14 @@ export interface components {
             /** @description When `allowed` is false: seconds until it could be allowed. */
             retryAfterSeconds: number | null;
         };
-        CheckRemaining: {
+        CheckLimit: {
             /**
              * @description What to do if Limitry cannot be reached next time: `open` allows, `closed` denies. SDKs remember it.
              * @enum {string}
              */
             failMode: "open" | "closed";
-            /** @example lim_3f0c… */
-            limit: string;
+            /** @example lmt_3f0c… */
+            limitId: string;
             /** @example AI budget */
             name: string;
             /** @example 195 */
@@ -834,7 +834,7 @@ export interface components {
              */
             cost?: number;
             /**
-             * @description `consume` (default) decides and uses; `preview` decides without using; `reserve` decides and HOLDS `cost` (an estimate) until you commit the actual amount or release it — see `reservation` in the answer. Only a reservation takes a slot of a `concurrent` limit.
+             * @description `consume` (default) decides and uses; `preview` decides without using; `reserve` decides and reserves `cost` (what it will probably use) until you commit the actual amount or release it — see `reservation` in the answer. Only a reservation takes a slot of a `concurrent` limit.
              * @example consume
              * @enum {string}
              */
@@ -854,7 +854,7 @@ export interface components {
             }[];
             subject: components["schemas"]["CheckSubject"];
             /**
-             * @description With `reserve`: how long the hold lasts before it releases itself. Default 300, at most 3600.
+             * @description With `reserve`: how long the reservation lasts before it releases itself. Default 300, at most 3600.
              * @example 300
              */
             ttlSeconds?: number;
@@ -871,6 +871,42 @@ export interface components {
              * @example user
              */
             kind: string;
+        };
+        Credit: {
+            amount: number;
+            createdAt: string;
+            createdByUserId: string | null;
+            /** @example crd_… */
+            id: string;
+            limitId: string;
+            note: string;
+            subject: {
+                id: string;
+                kind: string;
+            };
+        };
+        CreditInput: {
+            /**
+             * @description Credits to add; negative to take them back. Not 0.
+             * @example 5000
+             */
+            amount: number;
+            /**
+             * @description Required when `amount` is negative.
+             * @example October credits
+             */
+            note?: string;
+            /**
+             * @description Who gets the credits, as `{"kind": "team", "id": "team_42"}`.
+             * @example {
+             *       "kind": "team",
+             *       "id": "team_42"
+             *     }
+             */
+            subject: {
+                id: string;
+                kind: string;
+            };
         };
         ErrorEnvelope: {
             error: {
@@ -918,7 +954,7 @@ export interface components {
              * @example 200
              */
             amount: number;
-            /** @description When it was archived (deleting archives it); null while active. An archived limit isn't enforced; its usage history and credit grants stay. */
+            /** @description When it was archived; null while active. An archived limit isn't enforced; its usage history and credits stay. */
             archivedAt: string | null;
             /** @example 2026-10-04T12:00:00.000Z */
             createdAt: string;
@@ -934,18 +970,23 @@ export interface components {
              * @enum {string}
              */
             failMode: "open" | "closed";
-            /** @example lim_3f0c… */
+            /** @example lmt_3f0c… */
             id: string;
-            /** @example AI budget */
+            /**
+             * @description The hour a check last reached this limit, from usage history (up to about a minute behind); null if none has. A limit no check reaches isn't being enforced: check the subject kind and action your checks send.
+             * @example 2026-10-04T12:00:00.000Z
+             */
+            lastCheckedAt: string | null;
+            /** @example 200 cents per user per month */
             name: string;
             /** @description Counts the last minute, hour or day at the moment of the check instead of the calendar window. */
             rolling: boolean;
             /**
-             * @description Where a period begins. `calendar`: UTC boundaries (midnight, Monday, the 1st, 1 January). `anchor`: from the subject's anchor, its billing date, set with `subjects.update` (its first check until then), so an annual plan can refill monthly from its start day. `first_use`: at the first check after the previous period ended. Default: calendar.
+             * @description Where a period begins. `calendar`: UTC boundaries (midnight, Monday, the 1st, 1 January). `billing_date`: from the subject's billing date, set with `subjects.update` (its first check until then), so an annual plan can reset monthly from its start day. `first_use`: at the first check after the previous period ended. Default: calendar.
              * @example calendar
              * @enum {string}
              */
-            start: "calendar" | "anchor" | "first_use";
+            start: "calendar" | "billing_date" | "first_use";
             subject: components["schemas"]["LimitSubject"];
             /** @example cents */
             unit: string;
@@ -954,111 +995,15 @@ export interface components {
             /** @description Increases on every change. */
             version: number;
             /**
-             * @description `minute`, `hour`, `day`, `week`, `month` or `year`: a period of `every` of them, refilled where `start` says (or rolling: see `rolling`). `total`: a balance that never resets, topped up by grants. `concurrent`: at most `amount` held reservations at once.
+             * @description `minute`, `hour`, `day`, `week`, `month` or `year`: a period of `every` of them, reset where `start` says (or rolling: see `rolling`). `total`: a balance that never resets, raised by credits. `concurrent`: at most `amount` open reservations at once.
              * @example month
              * @enum {string}
              */
             window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
-        };
-        LimitGrant: {
-            amount: number;
-            createdAt: string;
-            createdByUserId: string | null;
-            /** @example grt_… */
-            id: string;
-            limitId: string;
-            note: string;
-            subject: {
-                id: string;
-                kind: string;
-            };
-        };
-        LimitGrantInput: {
-            /**
-             * @description Credits to add; negative to take them back. Not 0.
-             * @example 5000
-             */
-            amount: number;
-            /**
-             * @description Required when `amount` is negative.
-             * @example October top-up
-             */
-            note?: string;
-            /**
-             * @description Who gets the credits, as `{"kind": "team", "id": "team_42"}`.
-             * @example {
-             *       "kind": "team",
-             *       "id": "team_42"
-             *     }
-             */
-            subject: {
-                id: string;
-                kind: string;
-            };
         };
         LimitInput: {
             /**
-             * @description The action to limit; `*` for every action.
-             * @example ai-call
-             */
-            action: string;
-            /**
-             * @description How many units each subject may use per window.
-             * @example 200
-             */
-            amount: number;
-            /** @description Whether checks enforce it. Default: true. */
-            enabled?: boolean;
-            /**
-             * @description How many `window` units a period lasts: `window: "month", every: 3` is a quarter, `window: "hour", every: 5` five hours. Default: 1.
-             * @example 1
-             */
-            every?: number;
-            /**
-             * @description What your code should do when Limitry can't be reached: `open` (allow) or `closed` (deny). Default: open.
-             * @enum {string}
-             */
-            failMode?: "open" | "closed";
-            /**
-             * @description A name for the limit, unique among its environment's active limits.
-             * @example AI budget
-             */
-            name: string;
-            /** @description Count the last window instead of the calendar one (minute, hour or day only). Default: false. */
-            rolling?: boolean;
-            /**
-             * @description Where a period begins. `calendar`: UTC boundaries (midnight, Monday, the 1st, 1 January). `anchor`: from the subject's anchor, its billing date, set with `subjects.update` (its first check until then), so an annual plan can refill monthly from its start day. `first_use`: at the first check after the previous period ended. Default: calendar.
-             * @example calendar
-             * @enum {string}
-             */
-            start?: "calendar" | "anchor" | "first_use";
-            /** @description One subject; omit or null for every subject of the kind. A subject's own limit replaces the kind's limits with the same action and window. */
-            subjectId?: string | null;
-            /**
-             * @description Your own label for who is checked.
-             * @example user
-             */
-            subjectKind: string;
-            /**
-             * @description What the amount counts (display only). Default: units.
-             * @example cents
-             */
-            unit?: string;
-            /**
-             * @description `minute`, `hour`, `day`, `week`, `month` or `year`: a period of `every` of them, refilled where `start` says (or rolling: see `rolling`). `total`: a balance that never resets, topped up by grants. `concurrent`: at most `amount` held reservations at once.
-             * @example month
-             * @enum {string}
-             */
-            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
-        };
-        LimitPage: {
-            items: components["schemas"]["Limit"][];
-            /** @description Pass as ?cursor= to fetch the next page. */
-            nextCursor: string | null;
-        };
-        LimitPatch: {
-            /**
-             * @description The action to limit; `*` for every action.
+             * @description The action to limit. Default: `*`, every action.
              * @example ai-call
              */
             action?: string;
@@ -1066,7 +1011,7 @@ export interface components {
              * @description How many units each subject may use per window.
              * @example 200
              */
-            amount?: number;
+            amount: number;
             /** @description Whether checks enforce it. Default: true. */
             enabled?: boolean;
             /**
@@ -1080,33 +1025,89 @@ export interface components {
              */
             failMode?: "open" | "closed";
             /**
-             * @description A name for the limit, unique among its environment's active limits.
+             * @description A name, unique among the environment's active limits. Default: the sentence the limit reads as, such as "200 cents per user per month". If a limit already has that name, the answer is 409: give this one a name.
              * @example AI budget
              */
             name?: string;
             /** @description Count the last window instead of the calendar one (minute, hour or day only). Default: false. */
             rolling?: boolean;
             /**
-             * @description Where a period begins. `calendar`: UTC boundaries (midnight, Monday, the 1st, 1 January). `anchor`: from the subject's anchor, its billing date, set with `subjects.update` (its first check until then), so an annual plan can refill monthly from its start day. `first_use`: at the first check after the previous period ended. Default: calendar.
+             * @description Where a period begins. `calendar`: UTC boundaries (midnight, Monday, the 1st, 1 January). `billing_date`: from the subject's billing date, set with `subjects.update` (its first check until then), so an annual plan can reset monthly from its start day. `first_use`: at the first check after the previous period ended. Default: calendar.
              * @example calendar
              * @enum {string}
              */
-            start?: "calendar" | "anchor" | "first_use";
-            /** @description One subject; omit or null for every subject of the kind. A subject's own limit replaces the kind's limits with the same action and window. */
-            subjectId?: string | null;
+            start?: "calendar" | "billing_date" | "first_use";
+            subject: components["schemas"]["LimitInputSubject"];
             /**
-             * @description Your own label for who is checked.
-             * @example user
-             */
-            subjectKind?: string;
-            /**
-             * @description What the amount counts (display only). Default: units.
+             * @description What the amount counts, in words. Default: units.
              * @example cents
              */
             unit?: string;
             /**
-             * @description `minute`, `hour`, `day`, `week`, `month` or `year`: a period of `every` of them, refilled where `start` says (or rolling: see `rolling`). `total`: a balance that never resets, topped up by grants. `concurrent`: at most `amount` held reservations at once.
+             * @description `minute`, `hour`, `day`, `week`, `month` or `year`: a period of `every` of them, reset where `start` says (or rolling: see `rolling`). `total`: a balance that never resets, raised by credits. `concurrent`: at most `amount` open reservations at once.
              * @example month
+             * @enum {string}
+             */
+            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
+        };
+        /** @description Who it applies to: `{"kind": "user"}` for every user, `{"kind": "user", "id": "usr_123"}` for one. */
+        LimitInputSubject: {
+            /** @description One subject; omit or null for every subject of the kind. A subject's own limit replaces the kind's limits with the same action and window. */
+            id?: string | null;
+            /**
+             * @description Your own label for who is checked: user, team, apikey …
+             * @example user
+             */
+            kind: string;
+        };
+        LimitPage: {
+            items: components["schemas"]["Limit"][];
+            /** @description Pass as ?cursor= to fetch the next page. */
+            nextCursor: string | null;
+        };
+        LimitPatch: {
+            /** @description The action. Fixed once the limit is created: to change it, create a new limit and archive this one. */
+            action?: string;
+            /**
+             * @description How many units each subject may use per window.
+             * @example 300
+             */
+            amount?: number;
+            /** @description Whether checks enforce it. */
+            enabled?: boolean;
+            /** @description How many windows a period lasts. Fixed once the limit is created: to change it, create a new limit and archive this one. */
+            every?: number;
+            /**
+             * @description What your code should do when Limitry can't be reached: `open` (allow) or `closed` (deny).
+             * @enum {string}
+             */
+            failMode?: "open" | "closed";
+            /**
+             * @description A new name, unique among the environment's active limits.
+             * @example AI budget
+             */
+            name?: string;
+            /** @description Whether it counts the last window. Fixed once the limit is created: to change it, create a new limit and archive this one. */
+            rolling?: boolean;
+            /**
+             * @description Where a period begins. Fixed once the limit is created: to change it, create a new limit and archive this one.
+             * @enum {string}
+             */
+            start?: "calendar" | "billing_date" | "first_use";
+            /** @description Who it applies to. Fixed once the limit is created: to change it, create a new limit and archive this one. */
+            subject?: {
+                /** @description One subject; omit or null for every subject of the kind. A subject's own limit replaces the kind's limits with the same action and window. */
+                id?: string | null;
+                /**
+                 * @description Your own label for who is checked: user, team, apikey …
+                 * @example user
+                 */
+                kind?: string;
+            };
+            /** @description What the amount counts. Fixed once the limit is created: to change it, create a new limit and archive this one. */
+            unit?: string;
+            /**
+             * @description The window. Fixed once the limit is created: to change it, create a new limit and archive this one.
              * @enum {string}
              */
             window?: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
@@ -1123,17 +1124,24 @@ export interface components {
              */
             kind: string;
         };
+        LimitSyncEntry: components["schemas"]["LimitInput"] & {
+            /**
+             * @description The limit's name: the key a sync matches on, unique in the list.
+             * @example AI budget
+             */
+            name: string;
+        };
         LimitSyncInput: {
             /** @description Archive the environment's active limits whose names aren't in `limits` (restorable). Default: false, which leaves them alone. */
             archiveMissing?: boolean;
-            /** @description Answer what the sync would do and change nothing. Default: false. */
-            dryRun?: boolean;
             /**
-             * @description Every limit you want, each described whole: an omitted field is its default, as on create. Names are the key and must be unique in the list. At most 200.
+             * @description Every limit you want, each described whole: an omitted field is its default, as on create. Names are the key and must be unique in the list. What a limit counts (subject, action, unit, window, every, start, rolling) is fixed: to change it, rename the entry, which creates a new limit. At most 200.
              * @example [
              *       {
              *         "name": "AI budget",
-             *         "subjectKind": "user",
+             *         "subject": {
+             *           "kind": "user"
+             *         },
              *         "action": "ai-call",
              *         "amount": 200,
              *         "unit": "cents",
@@ -1141,7 +1149,9 @@ export interface components {
              *       }
              *     ]
              */
-            limits: components["schemas"]["LimitInput"][];
+            limits: components["schemas"]["LimitSyncEntry"][];
+            /** @description Answer what the sync would do and change nothing. Default: false. */
+            preview?: boolean;
         };
         LimitSyncResult: {
             /** @description Names of the limits archived (with `archiveMissing`). */
@@ -1153,8 +1163,8 @@ export interface components {
              *     ]
              */
             created: string[];
-            /** @description True when nothing was written: this is the plan. */
-            dryRun: boolean;
+            /** @description True when nothing was written: this is what a sync would do. */
+            preview: boolean;
             /** @description Names of the limits that already matched. */
             unchanged: string[];
             /** @description The limits changed, field by field. */
@@ -1201,10 +1211,10 @@ export interface components {
             cost: number;
             expiresAt: string;
             id: string;
-            /** @description The amount held. */
+            /** @description The amount reserved. */
             reserved: number;
             /**
-             * @description `expired`: nobody settled it in time, so it gave its hold back.
+             * @description `expired`: nobody committed or released it in time, so it released itself.
              * @enum {string}
              */
             status: "held" | "committed" | "released" | "expired";
@@ -1225,10 +1235,10 @@ export interface components {
         };
         Subject: {
             /**
-             * @description When its `anchor` limits' periods start from: its billing date, else its first counted check. Null until it has one.
+             * @description When its `billing_date` limits' periods start from: the billing date you set, else its first counted check. Null until it has one.
              * @example 2026-03-17T14:30:00.000Z
              */
-            anchor: string | null;
+            billingDate: string | null;
             subject: components["schemas"]["SubjectRef"];
         };
         SubjectRef: {
@@ -1238,12 +1248,12 @@ export interface components {
         SubjectReset: {
             /**
              * @description Just this limit. Default: every limit on the subject.
-             * @example lim_3f0c…
+             * @example lmt_3f0c…
              */
             limitId?: string;
         };
         SubjectResetResult: {
-            /** @description The limits that were refilled. */
+            /** @description The limits that were reset. */
             reset: string[];
             subject: components["schemas"]["SubjectRef"];
         };
@@ -1253,7 +1263,7 @@ export interface components {
              * @description The date and time its periods start from (ISO 8601), such as a subscription's start.
              * @example 2026-03-17T14:30:00Z
              */
-            anchor: string;
+            billingDate: string;
         };
         Team: {
             /** @example 2026-08-19T12:00:00.000Z */
@@ -1272,8 +1282,8 @@ export interface components {
         };
         UsageBySubject: {
             items: {
-                denied: number;
-                over: boolean;
+                /** @description Checks this limit refused in the window. */
+                refused: number;
                 remaining: number;
                 subject: {
                     id: string;
@@ -1290,7 +1300,7 @@ export interface components {
             limitId: string;
             points: {
                 allowed: number;
-                denied: number;
+                refused: number;
                 start: string;
                 used: number;
             }[];
@@ -1301,9 +1311,9 @@ export interface components {
             limits: {
                 action: string;
                 amount: number;
-                limit: string;
+                limitId: string;
                 name: string;
-                /** @description A balance's can exceed `amount` once credits are granted. */
+                /** @description A balance's can exceed `amount` once credits are added. */
                 remaining: number;
                 resetsAt: string | null;
                 rolling: boolean;
@@ -1627,7 +1637,7 @@ export interface operations {
                     "application/json": components["schemas"]["Limit"];
                 };
             };
-            /** @description Invalid request, such as a duplicate name (code: invalid_request). */
+            /** @description Invalid request, such as a change to a field fixed once the limit is created (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1647,6 +1657,15 @@ export interface operations {
             };
             /** @description A personal access token that cannot act in the named workspace (unknown slug, not a member, or excluded by the token's scopes), is not granted this route's scope, or lacks the workspace role the route requires (code: forbidden). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An active limit already has this name — or, with no `name` sent, the one the limit would get (code: invalid_request): send a `name` of its own. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1757,7 +1776,7 @@ export interface operations {
                     "application/json": components["schemas"]["Limit"];
                 };
             };
-            /** @description Invalid request, such as a duplicate name (code: invalid_request). */
+            /** @description Invalid request, such as a change to a field fixed once the limit is created (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1786,6 +1805,15 @@ export interface operations {
             };
             /** @description No such limit in this workspace (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An active limit already has this name — or, with no `name` sent, the one the limit would get (code: invalid_request): send a `name` of its own. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1865,7 +1893,7 @@ export interface operations {
             };
         };
     };
-    "limits.grants.list": {
+    "limits.credits.list": {
         parameters: {
             query?: never;
             header?: {
@@ -1881,14 +1909,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The grants. */
+            /** @description The credits. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["LimitGrant"][];
+                        items: components["schemas"]["Credit"][];
                     };
                 };
             };
@@ -1930,7 +1958,7 @@ export interface operations {
             };
         };
     };
-    "limits.grants.create": {
+    "limits.credits.create": {
         parameters: {
             query?: never;
             header?: {
@@ -1946,20 +1974,20 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LimitGrantInput"];
+                "application/json": components["schemas"]["CreditInput"];
             };
         };
         responses: {
-            /** @description The grant — the balance is raised. */
+            /** @description The credit — the balance is raised. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LimitGrant"];
+                    "application/json": components["schemas"]["Credit"];
                 };
             };
-            /** @description Invalid request, such as a duplicate name (code: invalid_request). */
+            /** @description Invalid request, such as a change to a field fixed once the limit is created (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2040,7 +2068,7 @@ export interface operations {
                     "application/json": components["schemas"]["Limit"];
                 };
             };
-            /** @description Invalid request, such as a duplicate name (code: invalid_request). */
+            /** @description Invalid request, such as a change to a field fixed once the limit is created (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2105,7 +2133,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description What changed, or with `dryRun`, what would. */
+            /** @description What changed, or with `preview`, what would. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2114,7 +2142,7 @@ export interface operations {
                     "application/json": components["schemas"]["LimitSyncResult"];
                 };
             };
-            /** @description Something in the list is invalid, such as a name twice; nothing was changed (code: invalid_request, each problem in `details`). */
+            /** @description Something in the list is invalid, such as a name twice or a change to what a limit counts; nothing was changed (code: invalid_request, each problem in `details`). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2172,7 +2200,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The reservation, settled. */
+            /** @description The reservation. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2181,7 +2209,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description Already settled the other way, or an invalid cost (code: invalid_request). */
+            /** @description Already committed or released the other way, or an invalid cost (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2257,7 +2285,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The reservation, settled. */
+            /** @description The reservation. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2266,7 +2294,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description Already settled the other way, or an invalid cost (code: invalid_request). */
+            /** @description Already committed or released the other way, or an invalid cost (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2338,7 +2366,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The reservation, settled. */
+            /** @description The reservation. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2347,7 +2375,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description Already settled the other way, or an invalid cost (code: invalid_request). */
+            /** @description Already committed or released the other way, or an invalid cost (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2497,7 +2525,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The subject, with its new anchor. */
+            /** @description The subject, with its new billing date. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2506,7 +2534,7 @@ export interface operations {
                     "application/json": components["schemas"]["Subject"];
                 };
             };
-            /** @description Invalid anchor (code: invalid_request). */
+            /** @description Invalid billing date (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2639,10 +2667,8 @@ export interface operations {
                 granularity?: "hour" | "day";
                 /** @description The limit. */
                 limitId: string;
-                /** @description With `subjectKind`: one subject's usage. */
-                subjectId?: string;
-                /** @description With `subjectId`: one subject's usage, not every subject's. */
-                subjectKind?: string;
+                /** @description One subject's usage, not every subject's, as `kind:id`. */
+                subject?: string;
                 /** @description End of the range (ISO 8601). Default: now. */
                 to?: string;
             };
@@ -2716,12 +2742,10 @@ export interface operations {
     "usage.standing": {
         parameters: {
             query: {
-                /** @description The subject's id, as your checks send it. */
-                id: string;
-                /** @description The subject's kind, as your checks send it. */
-                kind: string;
                 /** @description Shared subjects to include, comma-separated `kind:id` (up to 4). */
                 shared?: string;
+                /** @description The subject, as `kind:id`: its kind and id as your checks send them. */
+                subject: string;
             };
             header?: {
                 /** @description The environment the request acts in; without it, the product's default. An API key bound to an environment always acts in its own (403 naming another); an unknown environment is 400. */
