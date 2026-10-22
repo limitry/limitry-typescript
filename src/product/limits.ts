@@ -1,5 +1,6 @@
 import { apiErrorFrom } from "../errors.ts";
 import type { BaseClient, Schemas } from "../index.ts";
+import { MOVING_HEADER, MOVING_MS, retryWaitMs } from "../retry.ts";
 
 /**
  * Limitry's helpers (docs/product/roadmap.md slice 6): the two shapes a
@@ -34,6 +35,17 @@ import type { BaseClient, Schemas } from "../index.ts";
  * subject and action is remembered in memory, and `closed` throws
  * `Unavailable` while `open` — the default, and the answer before any
  * decision was seen — lets the work run unmetered.
+ *
+ * A subject being handed over between Limitry's servers (a split, a few
+ * seconds) answers `503 moving`: Limitry was reached and charged nothing,
+ * so it is not "unreachable" — the check (or commit, or release) is sent
+ * again with the same key for up to 30 s, each attempt with its own
+ * `timeoutMs`, before the fail mode applies. A fail-open product never
+ * runs uncounted through a handover. A limiter with too many checks
+ * inside at once answers `503 busy` the same way (charged nothing; retry
+ * with the same key): both share those 30 s, and each wait is the
+ * answer's Retry-After plus full jitter on a growing backoff, so clients
+ * turned away together don't all come back together.
  *
  * Retries are safe (docs/product idempotency): each guard or reserve
  * sends one Idempotency-Key, which the client's own retries reuse, so a
@@ -140,8 +152,30 @@ const TIMED_OUT = Symbol("timed out");
 /** How long a settle (or a replay to find a hold) may take, retries included. */
 const SETTLE_TIMEOUT_MS = 5000;
 
-export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
+export type LimitsInternals = {
+  /** Waits (tests pass a fake). */
+  sleep?: (ms: number) => Promise<void>;
+  /** 0 ≤ x < 1 for the jitter (tests pass a fixed one). */
+  random?: () => number;
+};
+
+const wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/** Seconds of a `Retry-After`, as ms (none: undefined; `retryWaitMs` floors it at a second). */
+function retryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get("retry-after");
+  const seconds = value === null ? NaN : Number(value);
+  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+}
+
+export function createLimits(
+  client: BaseClient,
+  options: LimitsOptions = {},
+  internals: LimitsInternals = {},
+) {
   const timeoutMs = options.timeoutMs ?? 1500;
+  const sleep = internals.sleep ?? wait;
+  const random = internals.random ?? Math.random;
   /** The last fail mode seen per subject + action (closed if any limit is). */
   const remembered = new Map<string, "open" | "closed">();
   const key = (s: Subject, action: string) =>
@@ -159,13 +193,39 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
 
   /**
    * The decision — or UNREACHABLE (network error, 5xx, past the plan, the
-   * flood guard's 429), or TIMED_OUT (no answer within `wait`).
+   * flood guard's 429), or TIMED_OUT (no answer within `wait`). A
+   * `moving` or `busy` answer is asked again, with the same key, for up
+   * to 30 s in all: each attempt has its own `wait`.
    */
   async function check(
     body: Schemas["CheckRequest"],
     idempotencyKey: string,
     wait = timeoutMs,
+    finishOnly = false,
   ): Promise<Decision | typeof UNREACHABLE | typeof TIMED_OUT> {
+    let waited = 0;
+    for (let tries = 0; ; tries++) {
+      const answer = await checkOnce(body, idempotencyKey, wait, finishOnly);
+      if (answer.kind !== "later") return answer.value;
+      const pause = retryWaitMs(answer.retryAfterMs, tries, random);
+      if (waited + pause > MOVING_MS) return UNREACHABLE;
+      waited += pause;
+      await sleep(pause);
+    }
+  }
+
+  async function checkOnce(
+    body: Schemas["CheckRequest"],
+    idempotencyKey: string,
+    wait: number,
+    finishOnly: boolean,
+  ): Promise<
+    | {
+        kind: "answer";
+        value: Decision | typeof UNREACHABLE | typeof TIMED_OUT;
+      }
+    | { kind: "later"; retryAfterMs: number | undefined }
+  > {
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Raced as well as aborted: a custom fetch (a service binding, a
     // test) may ignore the signal.
@@ -176,10 +236,18 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
       try {
         const { data, error, response } = await client.POST("/checks", {
           body,
-          headers: { "idempotency-key": idempotencyKey },
+          headers: {
+            "idempotency-key": idempotencyKey,
+            // `moving` and `busy` come back here at once: this loop
+            // retries them.
+            [MOVING_HEADER]: "return",
+            ...(finishOnly ? { "limitry-finish-only": "1" } : {}),
+          },
           signal: AbortSignal.timeout(wait),
         });
         if (data) return data;
+        if (isRetryLater(response, error))
+          return { later: retryAfterMs(response) };
         // Past the plan's allowance (402 plan_limit_reached), or stopped by
         // the edge's flood guard (429): no decision — each limit's fail
         // mode applies, as if Limitry were unreachable.
@@ -202,7 +270,9 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
     try {
       const answer = await Promise.race([asked, late]);
       if (answer instanceof Error) throw answer;
-      return answer;
+      if (typeof answer === "object" && "later" in answer)
+        return { kind: "later", retryAfterMs: answer.later };
+      return { kind: "answer", value: answer };
     } finally {
       clearTimeout(timer);
     }
@@ -218,21 +288,39 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
     action: "commit" | "release",
     cost?: number,
   ) {
-    try {
-      if (action === "commit") {
-        await client.POST("/reservations/{reservationId}/commit", {
-          params: { path: { reservationId: id } },
-          body: { cost: cost ?? 0 },
-          signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
-        });
-      } else {
-        await client.POST("/reservations/{reservationId}/release", {
-          params: { path: { reservationId: id } },
-          signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
-        });
+    // A commit lost would leave work uncounted: `moving` or `busy` is
+    // asked again, with the same key, for up to 30 s, each attempt with
+    // its own budget.
+    const idempotencyKey = crypto.randomUUID();
+    let waited = 0;
+    for (let tries = 0; ; tries++) {
+      let retryMs: number | null = null;
+      try {
+        const headers = {
+          "idempotency-key": idempotencyKey,
+          [MOVING_HEADER]: "return",
+        };
+        const { error, response } =
+          action === "commit"
+            ? await client.POST("/reservations/{reservationId}/commit", {
+                params: { path: { reservationId: id } },
+                body: { cost: cost ?? 0 },
+                headers,
+                signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
+              })
+            : await client.POST("/reservations/{reservationId}/release", {
+                params: { path: { reservationId: id } },
+                headers,
+                signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
+              });
+        if (isRetryLater(response, error))
+          retryMs = retryWaitMs(retryAfterMs(response), tries, random);
+      } catch {
+        // The reservation expires on its own.
       }
-    } catch {
-      // The reservation expires on its own.
+      if (retryMs === null || waited + retryMs > MOVING_MS) return;
+      waited += retryMs;
+      await sleep(retryMs);
     }
   }
 
@@ -284,18 +372,27 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
 
     /** Checks `cost`, runs `fn` only if allowed, and returns its result. */
     async guard<T>(request: GuardRequest, fn: () => Promise<T>): Promise<T> {
-      const decision = await check(
-        {
-          subject: request.subject,
-          shared: request.shared,
-          action: request.action,
-          cost: request.cost ?? 1,
-        },
-        crypto.randomUUID(),
-      );
+      const body = {
+        subject: request.subject,
+        shared: request.shared,
+        action: request.action,
+        cost: request.cost ?? 1,
+      };
+      const idempotencyKey = crypto.randomUUID();
+      const decision = await check(body, idempotencyKey);
       if (decision === UNREACHABLE || decision === TIMED_OUT) {
         if (failMode(request.subject, request.action) === "closed") {
           throw new Unavailable();
+        }
+        if (decision === TIMED_OUT) {
+          // No answer in time, and the work runs (fail open): the check may
+          // be part way (held on some of Limitry's servers, across
+          // subjects). Sent once more with the same key, in the background,
+          // ONLY TO FINISH it — Limitry never decides it afresh then, so a
+          // check that never arrived charges nothing.
+          void check(body, idempotencyKey, SETTLE_TIMEOUT_MS, true).catch(
+            () => {},
+          );
         }
         return fn();
       }
@@ -383,3 +480,10 @@ export function createLimits(client: BaseClient, options: LimitsOptions = {}) {
 }
 
 export type Limits = ReturnType<typeof createLimits>;
+
+/** `503 moving` or `503 busy`: nothing was charged — retry with the same key. */
+function isRetryLater(response: Response, error: unknown): boolean {
+  const code = (error as { error?: { code?: string } } | undefined)?.error
+    ?.code;
+  return response.status === 503 && (code === "moving" || code === "busy");
+}

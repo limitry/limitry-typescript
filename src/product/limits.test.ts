@@ -5,8 +5,14 @@ import { createLimits, LimitReached, Unavailable } from "./limits.ts";
 
 type Handler = (path: string, body: unknown) => Response | Promise<Response>;
 
-function limitsWith(handler: Handler, options = {}) {
-  const calls: { path: string; body: unknown; key: string | null }[] = [];
+const slept: number[] = [];
+function limitsWith(handler: Handler, options = {}, random = () => 0) {
+  const calls: {
+    path: string;
+    body: unknown;
+    key: string | null;
+    finishOnly: string | null;
+  }[] = [];
   const client = createClient({
     token: "sk_test",
     api: "https://api.example.test",
@@ -14,15 +20,30 @@ function limitsWith(handler: Handler, options = {}) {
       const path = new URL(request.url).pathname.replace(/^\/v1/, "");
       const text = await request.text();
       const body = text ? JSON.parse(text) : undefined;
-      calls.push({ path, body, key: request.headers.get("idempotency-key") });
+      calls.push({
+        path,
+        body,
+        key: request.headers.get("idempotency-key"),
+        finishOnly: request.headers.get("limitry-finish-only"),
+      });
       return handler(path, body);
     },
   });
   return {
-    limits: createLimits(client, { timeoutMs: 100, ...options }),
+    limits: createLimits(
+      client,
+      { timeoutMs: 100, ...options },
+      { sleep: async (ms) => void slept.push(ms), random },
+    ),
     calls,
   };
 }
+
+const moving = () =>
+  Response.json(
+    { error: { code: "moving", message: "moving" } },
+    { status: 503, headers: { "retry-after": "1" } },
+  );
 
 const decision = (
   allowed: boolean,
@@ -51,6 +72,153 @@ const decision = (
     ...extra,
   });
 const subject = { kind: "user", id: "u1" };
+
+describe("a subject being handed over (`moving`)", () => {
+  it("asks again with the same key, outside the decision budget, and counts the work", async () => {
+    let n = 0;
+    const work = vi.fn(async () => "done");
+    const { limits, calls } = limitsWith((path) =>
+      path === "/checks" && n++ < 3 ? moving() : decision(true),
+    );
+    expect(await limits.guard({ subject, action: "run" }, work)).toBe("done");
+    expect(work).toHaveBeenCalledTimes(1);
+    const checks = calls.filter((c) => c.path === "/checks");
+    expect(checks).toHaveLength(4);
+    expect(new Set(checks.map((c) => c.key)).size).toBe(1);
+  });
+
+  it("is unreachable only after 30 s of `moving`: then the fail mode decides", async () => {
+    const work = vi.fn(async () => "ran");
+    const open = limitsWith(() => moving());
+    expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
+      "ran",
+    );
+    expect(open.calls.length).toBe(31);
+    const closed = limitsWith(() => moving(), { failMode: "closed" });
+    await expect(
+      closed.limits.guard({ subject, action: "run" }, work),
+    ).rejects.toBeInstanceOf(Unavailable);
+  });
+
+  it("keeps a commit going through a handover, with the same key", async () => {
+    let commits = 0;
+    const { limits, calls } = limitsWith((path) => {
+      if (path === "/checks")
+        return decision(true, "open", {
+          reservation: { id: "rsv_1", expiresAt: "2026-10-21T00:00:00.000Z" },
+        });
+      if (path.endsWith("/commit") && commits++ < 2) return moving();
+      return Response.json({ id: "rsv_1", status: "committed" });
+    });
+    await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
+    const sent = calls.filter((c) => c.path.endsWith("/commit"));
+    expect(sent).toHaveLength(3);
+    expect(new Set(sent.map((c) => c.key)).size).toBe(1);
+  });
+});
+
+const busy = (seconds = "2") =>
+  Response.json(
+    { error: { code: "busy", message: "busy" } },
+    { status: 503, headers: { "retry-after": seconds } },
+  );
+
+describe("an overloaded limiter (`busy`)", () => {
+  it("asks again with the same key after Retry-After plus jitter, and counts the work", async () => {
+    let n = 0;
+    const work = vi.fn(async () => "done");
+    const { limits, calls } = limitsWith(
+      (path) => (path === "/checks" && n++ < 3 ? busy() : decision(true)),
+      {},
+      () => 0.5,
+    );
+    slept.length = 0;
+    expect(await limits.guard({ subject, action: "run" }, work)).toBe("done");
+    expect(work).toHaveBeenCalledTimes(1);
+    const checks = calls.filter((c) => c.path === "/checks");
+    expect(checks).toHaveLength(4);
+    expect(new Set(checks.map((c) => c.key)).size).toBe(1);
+    // Retry-After 2 s, plus half of the backoff: 250, 500, 1000 ms.
+    expect(slept).toEqual([2125, 2250, 2500]);
+  });
+
+  it("shares moving's 30 s: unreachable only after it, then the fail mode decides", async () => {
+    const work = vi.fn(async () => "ran");
+    let n = 0;
+    const open = limitsWith(() => (n++ % 2 ? busy("1") : moving()));
+    slept.length = 0;
+    expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
+      "ran",
+    );
+    expect(open.calls.length).toBe(31);
+    expect(slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(30_000);
+    const closed = limitsWith(() => busy(), { failMode: "closed" });
+    await expect(
+      closed.limits.guard({ subject, action: "run" }, work),
+    ).rejects.toBeInstanceOf(Unavailable);
+  });
+
+  it("waits longer, with jitter, the more often it is turned away — inside its bounds", async () => {
+    const { limits } = limitsWith(() => busy("1"), {}, Math.random);
+    slept.length = 0;
+    await limits.guard({ subject, action: "run" }, async () => "ran");
+    expect(slept.length).toBeGreaterThan(5);
+    slept.forEach((ms, n) => {
+      expect(ms).toBeGreaterThanOrEqual(1_000);
+      expect(ms).toBeLessThan(1_000 + Math.min(4_000, 250 * 2 ** n));
+    });
+  });
+
+  it("keeps a commit going while busy, with the same key", async () => {
+    let commits = 0;
+    const { limits, calls } = limitsWith((path) => {
+      if (path === "/checks")
+        return decision(true, "open", {
+          reservation: { id: "rsv_1", expiresAt: "2026-10-21T00:00:00.000Z" },
+        });
+      if (path.endsWith("/commit") && commits++ < 2) return busy();
+      return Response.json({ id: "rsv_1", status: "committed" });
+    });
+    await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
+    const sent = calls.filter((c) => c.path.endsWith("/commit"));
+    expect(sent).toHaveLength(3);
+    expect(new Set(sent.map((c) => c.key)).size).toBe(1);
+  });
+});
+
+describe("guard after a check that timed out", () => {
+  it("sends it once more with the same key, in the background, to finish it", async () => {
+    let n = 0;
+    const { limits, calls } = limitsWith(async () => {
+      if (n++ === 0) await new Promise((r) => setTimeout(r, 300));
+      return decision(true);
+    });
+    await limits.guard({ subject, action: "run" }, async () => "ran");
+    await vi.waitFor(() =>
+      expect(calls.filter((c) => c.path === "/checks")).toHaveLength(2),
+    );
+    const [first, second] = calls.filter((c) => c.path === "/checks");
+    expect(second.key).toBe(first.key);
+    expect(second.finishOnly).toBe("1");
+    expect(first.finishOnly).toBeNull();
+  });
+
+  it("never resends when the limit fails closed (the work didn't run)", async () => {
+    let n = 0;
+    const { limits, calls } = limitsWith(
+      async () => {
+        if (n++ === 0) await new Promise((r) => setTimeout(r, 300));
+        return decision(true);
+      },
+      { failMode: "closed" },
+    );
+    await expect(
+      limits.guard({ subject, action: "run" }, async () => "ran"),
+    ).rejects.toBeInstanceOf(Unavailable);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(calls.filter((c) => c.path === "/checks")).toHaveLength(1);
+  });
+});
 
 describe("guard", () => {
   it("runs the work only when allowed", async () => {

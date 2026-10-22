@@ -1473,6 +1473,13 @@ export interface operations {
                     "application/json": components["schemas"]["CheckDecision"];
                 };
             };
+            /** @description Sent with `limitry-finish-only: 1` (a client finishing an earlier try with the same Idempotency-Key, after a timeout), and there was no earlier try to finish: nothing was decided or charged. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Invalid request (code: invalid_request). */
             400: {
                 headers: {
@@ -1527,7 +1534,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description The subject is moving between Limitry's servers, a few seconds (code: moving, with Retry-After): retry with the same Idempotency-Key — nothing was charged (anything held is given back, or finished by the retry). Or too many checks for these subjects are being decided at once (code: busy, with Retry-After): nothing was charged — retry with the same Idempotency-Key after Retry-After, with backoff. Or checks are unavailable, or a check across Limitry's servers couldn't be confirmed in time and may have been charged (code: internal_error): retry with the same Idempotency-Key. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2254,7 +2261,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description The reservation's subject is moving between Limitry's servers, a few seconds (code: moving, with Retry-After): retry — the same settle answers the same. Or checks are unavailable (code: internal_error). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2339,7 +2346,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description The reservation's subject is moving between Limitry's servers, a few seconds (code: moving, with Retry-After): retry — the same settle answers the same. Or checks are unavailable (code: internal_error). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2420,7 +2427,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description The reservation's subject is moving between Limitry's servers, a few seconds (code: moving, with Retry-After): retry — the same settle answers the same. Or checks are unavailable (code: internal_error). */
             503: {
                 headers: {
                     [name: string]: unknown;

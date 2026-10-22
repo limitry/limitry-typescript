@@ -4,7 +4,7 @@ import createOpenApiClient from "openapi-fetch";
 import { apiErrorFrom } from "./errors.ts";
 import * as product from "./product/index.ts";
 import { resources } from "./resources.gen.ts";
-import { withRetries } from "./retry.ts";
+import { withoutMovingHeader, withRetries } from "./retry.ts";
 import { verifyWebhook } from "./webhooks.ts";
 import type { components, paths } from "./v1.gen.ts";
 
@@ -120,7 +120,7 @@ function createBaseClient(options: ClientOptions) {
     baseUrl: `${origin}/v1`,
     fetch:
       options.maxRetries === 0
-        ? send
+        ? withoutMovingHeader(send)
         : withRetries(send, { maxRetries: options.maxRetries }),
   });
   client.use({
