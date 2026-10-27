@@ -1,6 +1,6 @@
 {
   "name": "@limitry/sdk",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "description": "Limitry API client",
   "type": "module",
   "exports": {
@@ -25,7 +25,7 @@
   "devDependencies": {
     "@types/node": "26.6.5",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "license": "Apache-2.0",
   "homepage": "https://limitry.com/docs/typescript/",

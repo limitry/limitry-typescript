@@ -7,6 +7,7 @@
  */
 import type { BaseClient } from "../index.ts";
 import { createLimits } from "./limits.ts";
+import { movingRetry } from "./moving.ts";
 
 export {
   createLimits,
@@ -28,3 +29,11 @@ export const productMethods = (client: BaseClient) => {
     standing: limits.standing,
   };
 };
+
+/**
+ * Limitry's `503 moving` and `503 busy`, retried by the SDK client, the CLI
+ * and the MCP server with the same key, for up to 30 s (./moving.ts; the
+ * platform's `productRetry` seam in ../retry.ts). `guard` and `reserve`
+ * keep to their own `timeoutMs` instead (./limits.ts).
+ */
+export const productRetry = movingRetry();

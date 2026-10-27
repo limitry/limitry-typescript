@@ -14,35 +14,53 @@
  * own signal aborted (a caller's timeout) is never retried: the caller
  * decided.
  *
- * A `503 moving` (a subject handed over between Limitry's servers, a few
- * seconds) or `503 busy` (too many checks inside one of them at once) is
- * retried for up to MOVING_MS whatever `maxRetries` says: nothing was
- * charged, and the same key gets the answer once it lands. Each wait is
- * the Retry-After (at least a second) plus full jitter on a capped
- * exponential backoff (`retryWaitMs`), so clients turned away together
- * don't come back together. A caller that keeps its own time budget (the
- * guard and reserve helpers) sends `MOVING_HEADER: return` and gets
- * either answer back at once.
+ * A product's own "try again shortly" answers (Limitry's `503 moving`)
+ * are retried too when the fork-owned ./product exports `productRetry`
+ * (ProductRetry, below): apart from `maxRetries`, for up to its
+ * `budgetMs`, always with the same key. The platform's exports none.
  */
+
+import * as product from "./product/index.ts";
 
 const WRITES = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 export const DEFAULT_MAX_RETRIES = 2;
 export const MAX_WAIT_MS = 20_000;
-/**
- * How long a `moving` or `busy` answer is retried, all told: a handover's
- * freeze lasts at most 30 s.
- */
-export const MOVING_MS = 30_000;
-/** Sent by a caller that retries `moving` and `busy` itself (never reaches the API). */
-export const MOVING_HEADER = "x-limitry-moving";
-/** The backoff added to a `moving` or `busy` wait: full jitter under base × 2^n, capped. */
-export const JITTER_BASE_MS = 250;
-export const JITTER_CAP_MS = 4_000;
 /** The longest key a caller may pass where a client derives keys from it. */
 export const MAX_BASE_KEY = 200;
 
 type Fetch = (request: Request) => Promise<Response>;
+
+/**
+ * A product's own retry-later answers (the seam: `productRetry`, an
+ * optional export of ./product). Define it in a module that imports only
+ * TYPES from this file: this file reads ./product, so a value imported
+ * back would be read before it exists.
+ */
+export type ProductRetry = {
+  /**
+   * The wait (ms) before sending this call again with the same key, or
+   * null when the response is not one of the product's. `tries` counts
+   * the product's answers this call already had (0 first).
+   */
+  wait: (response: Response, tries: number) => Promise<number | null>;
+  /** The most those waits add up to in one call; past it the answer is returned. */
+  budgetMs: number;
+};
+
+/**
+ * Sent as `return` by a caller that handles the product's answers itself
+ * (keeping its own time budget): they come back at once. Removed before
+ * the request leaves; it never reaches the API.
+ */
+export const PRODUCT_RETRY_HEADER = "x-sdk-product-retry";
+
+// The seam may not export it (the platform's and most forks' don't).
+// Read when a client is made, not on import: ./product may import back.
+const productRetry = (): ProductRetry | null =>
+  "productRetry" in product
+    ? ((product as { productRetry?: ProductRetry }).productRetry ?? null)
+    : null;
 
 export type RetryOptions = {
   /** Retries after the first attempt (default 2; 0 = never retry). */
@@ -51,8 +69,8 @@ export type RetryOptions = {
   key?: (method: string, path: string) => string | Promise<string>;
   /** Waits (tests pass a fake). */
   sleep?: (ms: number) => Promise<void>;
-  /** 0 ≤ x < 1 for the jitter (tests pass a fixed one). */
-  random?: () => number;
+  /** The product's retry-later answers (default: ./product's `productRetry`; null = none). */
+  product?: ProductRetry | null;
 };
 
 const wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
@@ -71,43 +89,6 @@ function retryAfter(response: Response): number | undefined {
   return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
 }
 
-/**
- * The wait before retrying a `moving` or `busy` answer, the `attempt`th
- * in a row (0 first): the server's Retry-After, at least a second (a 0,
- * or a date past, must not spin), plus full jitter — anywhere from 0 to
- * min(JITTER_CAP_MS, JITTER_BASE_MS × 2^attempt).
- */
-export function retryWaitMs(
-  retryAfterMs: number | undefined,
-  attempt: number,
-  random: () => number = Math.random,
-): number {
-  const floor = Math.max(1_000, retryAfterMs ?? 1_000);
-  const ceiling = Math.min(JITTER_CAP_MS, JITTER_BASE_MS * 2 ** attempt);
-  return floor + random() * ceiling;
-}
-
-/** A `503` that says retry later with the same key: `moving` or `busy` (else null). */
-export async function retryLater(
-  response: Response,
-): Promise<"moving" | "busy" | null> {
-  if (response.status !== 503) return null;
-  try {
-    const body = (await response.clone().json()) as {
-      error?: { code?: string };
-    };
-    const code = body.error?.code;
-    return code === "moving" || code === "busy" ? code : null;
-  } catch {
-    return null;
-  }
-}
-
-/** A `503` whose error code is `moving`. */
-export async function isMoving(response: Response): Promise<boolean> {
-  return (await retryLater(response)) === "moving";
-}
-
 async function retryable(response: Response): Promise<boolean> {
   if (RETRY_STATUSES.has(response.status)) return true;
   if (response.status !== 409) return false;
@@ -121,31 +102,29 @@ async function retryable(response: Response): Promise<boolean> {
   }
 }
 
-/**
- * `fetch` that only drops MOVING_HEADER (a client with retries off): the
- * header is between the SDK's own parts, never sent to the API.
- */
-export function withoutMovingHeader(fetch: Fetch): Fetch {
-  return (request) => {
-    if (!request.headers.has(MOVING_HEADER)) return fetch(request);
-    const headers = new Headers(request.headers);
-    headers.delete(MOVING_HEADER);
-    return fetch(new Request(request, { headers }));
-  };
+/** The request without PRODUCT_RETRY_HEADER, and whether it asked for `return`. */
+function takeProductRetryHeader(request: Request): [Request, boolean] {
+  if (!request.headers.has(PRODUCT_RETRY_HEADER)) return [request, false];
+  const returns = request.headers.get(PRODUCT_RETRY_HEADER) === "return";
+  const headers = new Headers(request.headers);
+  headers.delete(PRODUCT_RETRY_HEADER);
+  return [new Request(request, { headers }), returns];
+}
+
+/** `fetch` that only drops PRODUCT_RETRY_HEADER (a client with retries off). */
+export function withoutProductRetryHeader(fetch: Fetch): Fetch {
+  return (request) => fetch(takeProductRetryHeader(request)[0]);
 }
 
 /** `fetch` with the rule above. Each request is one logical call. */
 export function withRetries(fetch: Fetch, options: RetryOptions = {}): Fetch {
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const sleep = options.sleep ?? wait;
-  const random = options.random ?? Math.random;
+  const later =
+    options.product === undefined ? productRetry() : options.product;
   return async (request) => {
-    const returnMoving = request.headers.get(MOVING_HEADER) === "return";
-    if (request.headers.has(MOVING_HEADER)) {
-      const headers = new Headers(request.headers);
-      headers.delete(MOVING_HEADER);
-      request = new Request(request, { headers });
-    }
+    let returnLater: boolean;
+    [request, returnLater] = takeProductRetryHeader(request);
     if (WRITES.has(request.method) && !request.headers.has("idempotency-key")) {
       const url = new URL(request.url);
       const key = options.key
@@ -155,12 +134,13 @@ export function withRetries(fetch: Fetch, options: RetryOptions = {}): Fetch {
       headers.set("idempotency-key", key);
       request = new Request(request, { headers });
     }
-    let movingWaited = 0;
-    let movingTries = 0;
+    let laterTries = 0;
+    let laterWaited = 0;
     for (let attempt = 0; ; attempt++) {
       const last = attempt >= maxRetries;
-      // Send a copy while a retry may follow: a body is read once.
-      const sending = request.clone();
+      // Send a copy while a retry may follow: a body is read once (the
+      // product's answers are retried past the last attempt).
+      const sending = last && !later ? request : request.clone();
       let response: Response;
       try {
         response = await fetch(sending);
@@ -169,15 +149,18 @@ export function withRetries(fetch: Fetch, options: RetryOptions = {}): Fetch {
         await sleep(backoff(attempt));
         continue;
       }
-      const later = await retryLater(response);
-      if (later && returnMoving) return response;
-      if (later) {
-        // Retried apart from maxRetries, for up to MOVING_MS.
-        const delay = retryWaitMs(retryAfter(response), movingTries++, random);
-        if (movingWaited + delay > MOVING_MS) return response;
-        movingWaited += delay;
+      const laterMs = later ? await later.wait(response, laterTries) : null;
+      if (laterMs !== null && later) {
+        // Back at once to a caller that keeps its own budget (never
+        // retried as an ordinary 503 either); else retried apart from
+        // maxRetries, within the product's budget.
+        if (returnLater || laterWaited + laterMs > later.budgetMs) {
+          return response;
+        }
+        laterTries++;
+        laterWaited += laterMs;
         await response.body?.cancel();
-        await sleep(delay);
+        await sleep(laterMs);
         attempt--;
         continue;
       }

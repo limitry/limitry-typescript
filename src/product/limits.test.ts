@@ -74,11 +74,12 @@ const decision = (
 const subject = { kind: "user", id: "u1" };
 
 describe("a subject being handed over (`moving`)", () => {
-  it("asks again with the same key, outside the decision budget, and counts the work", async () => {
+  it("asks again with the same key while the wait fits in timeoutMs, and counts the work", async () => {
     let n = 0;
     const work = vi.fn(async () => "done");
-    const { limits, calls } = limitsWith((path) =>
-      path === "/checks" && n++ < 3 ? moving() : decision(true),
+    const { limits, calls } = limitsWith(
+      (path) => (path === "/checks" && n++ < 3 ? moving() : decision(true)),
+      { timeoutMs: 10_000 },
     );
     expect(await limits.guard({ subject, action: "run" }, work)).toBe("done");
     expect(work).toHaveBeenCalledTimes(1);
@@ -87,14 +88,21 @@ describe("a subject being handed over (`moving`)", () => {
     expect(new Set(checks.map((c) => c.key)).size).toBe(1);
   });
 
-  it("is unreachable only after 30 s of `moving`: then the fail mode decides", async () => {
+  it("is unreachable once the next wait won't fit in timeoutMs: then the fail mode decides", async () => {
     const work = vi.fn(async () => "ran");
-    const open = limitsWith(() => moving());
+    const open = limitsWith(() => moving(), { timeoutMs: 1500 });
+    slept.length = 0;
     expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
       "ran",
     );
-    expect(open.calls.length).toBe(31);
-    const closed = limitsWith(() => moving(), { failMode: "closed" });
+    // Asked, a second's wait (fits in 1.5 s), asked again; the next
+    // second won't fit.
+    expect(open.calls.length).toBe(2);
+    expect(slept).toEqual([1000]);
+    const closed = limitsWith(() => moving(), {
+      timeoutMs: 1500,
+      failMode: "closed",
+    });
     await expect(
       closed.limits.guard({ subject, action: "run" }, work),
     ).rejects.toBeInstanceOf(Unavailable);
@@ -102,14 +110,20 @@ describe("a subject being handed over (`moving`)", () => {
 
   it("keeps a commit going through a handover, with the same key", async () => {
     let commits = 0;
-    const { limits, calls } = limitsWith((path) => {
-      if (path === "/checks")
-        return decision(true, "open", {
-          reservation: { id: "rsv_1", expiresAt: "2026-10-21T00:00:00.000Z" },
-        });
-      if (path.endsWith("/commit") && commits++ < 2) return moving();
-      return Response.json({ id: "rsv_1", status: "committed" });
-    });
+    const { limits, calls } = limitsWith(
+      (path) => {
+        if (path === "/checks")
+          return decision(true, "open", {
+            reservation: {
+              id: "rsv_1",
+              expiresAt: "2026-10-21T00:00:00.000Z",
+            },
+          });
+        if (path.endsWith("/commit") && commits++ < 2) return moving();
+        return Response.json({ id: "rsv_1", status: "committed" });
+      },
+      { timeoutMs: 10_000 },
+    );
     await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
     const sent = calls.filter((c) => c.path.endsWith("/commit"));
     expect(sent).toHaveLength(3);
@@ -129,7 +143,7 @@ describe("an overloaded limiter (`busy`)", () => {
     const work = vi.fn(async () => "done");
     const { limits, calls } = limitsWith(
       (path) => (path === "/checks" && n++ < 3 ? busy() : decision(true)),
-      {},
+      { timeoutMs: 30_000 },
       () => 0.5,
     );
     slept.length = 0;
@@ -142,16 +156,18 @@ describe("an overloaded limiter (`busy`)", () => {
     expect(slept).toEqual([2125, 2250, 2500]);
   });
 
-  it("shares moving's 30 s: unreachable only after it, then the fail mode decides", async () => {
+  it("shares moving's budget: unreachable once the next wait won't fit, then the fail mode decides", async () => {
     const work = vi.fn(async () => "ran");
     let n = 0;
-    const open = limitsWith(() => (n++ % 2 ? busy("1") : moving()));
+    const open = limitsWith(() => (n++ % 2 ? busy("1") : moving()), {
+      timeoutMs: 1500,
+    });
     slept.length = 0;
     expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
       "ran",
     );
-    expect(open.calls.length).toBe(31);
-    expect(slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(30_000);
+    expect(open.calls.length).toBe(2);
+    expect(slept.reduce((a, b) => a + b, 0)).toBeLessThan(1500);
     const closed = limitsWith(() => busy(), { failMode: "closed" });
     await expect(
       closed.limits.guard({ subject, action: "run" }, work),
@@ -159,7 +175,11 @@ describe("an overloaded limiter (`busy`)", () => {
   });
 
   it("waits longer, with jitter, the more often it is turned away — inside its bounds", async () => {
-    const { limits } = limitsWith(() => busy("1"), {}, Math.random);
+    const { limits } = limitsWith(
+      () => busy("1"),
+      { timeoutMs: 30_000 },
+      Math.random,
+    );
     slept.length = 0;
     await limits.guard({ subject, action: "run" }, async () => "ran");
     expect(slept.length).toBeGreaterThan(5);
@@ -171,18 +191,45 @@ describe("an overloaded limiter (`busy`)", () => {
 
   it("keeps a commit going while busy, with the same key", async () => {
     let commits = 0;
-    const { limits, calls } = limitsWith((path) => {
-      if (path === "/checks")
-        return decision(true, "open", {
-          reservation: { id: "rsv_1", expiresAt: "2026-10-21T00:00:00.000Z" },
-        });
-      if (path.endsWith("/commit") && commits++ < 2) return busy();
-      return Response.json({ id: "rsv_1", status: "committed" });
-    });
+    const { limits, calls } = limitsWith(
+      (path) => {
+        if (path === "/checks")
+          return decision(true, "open", {
+            reservation: {
+              id: "rsv_1",
+              expiresAt: "2026-10-21T00:00:00.000Z",
+            },
+          });
+        if (path.endsWith("/commit") && commits++ < 2) return busy();
+        return Response.json({ id: "rsv_1", status: "committed" });
+      },
+      { timeoutMs: 10_000 },
+    );
     await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
     const sent = calls.filter((c) => c.path.endsWith("/commit"));
     expect(sent).toHaveLength(3);
     expect(new Set(sent.map((c) => c.key)).size).toBe(1);
+  });
+
+  it("gives up a commit that stays busy within timeoutMs, and still returns the work's result", async () => {
+    const { limits, calls } = limitsWith(
+      (path) =>
+        path === "/checks"
+          ? decision(true, "open", {
+              reservation: {
+                id: "rsv_1",
+                expiresAt: "2026-10-21T00:00:00.000Z",
+              },
+            })
+          : busy("1"),
+      { timeoutMs: 1500 },
+    );
+    slept.length = 0;
+    expect(
+      await limits.reserve({ subject, action: "run" }, async () => "answer"),
+    ).toBe("answer");
+    expect(calls.filter((c) => c.path.endsWith("/commit"))).toHaveLength(2);
+    expect(slept).toEqual([1000]);
   });
 });
 

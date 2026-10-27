@@ -1,6 +1,7 @@
 import { apiErrorFrom } from "../errors.ts";
 import type { BaseClient, Schemas } from "../index.ts";
-import { MOVING_HEADER, MOVING_MS, retryWaitMs } from "../retry.ts";
+import { PRODUCT_RETRY_HEADER } from "../retry.ts";
+import { retryWaitMs } from "./moving.ts";
 
 /**
  * Limitry's helpers (docs/product/roadmap.md slice 6): the two shapes a
@@ -37,15 +38,17 @@ import { MOVING_HEADER, MOVING_MS, retryWaitMs } from "../retry.ts";
  * decision was seen — lets the work run unmetered.
  *
  * A subject being handed over between Limitry's servers (a split, a few
- * seconds) answers `503 moving`: Limitry was reached and charged nothing,
- * so it is not "unreachable" — the check (or commit, or release) is sent
- * again with the same key for up to 30 s, each attempt with its own
- * `timeoutMs`, before the fail mode applies. A fail-open product never
- * runs uncounted through a handover. A limiter with too many checks
- * inside at once answers `503 busy` the same way (charged nothing; retry
- * with the same key): both share those 30 s, and each wait is the
- * answer's Retry-After plus full jitter on a growing backoff, so clients
- * turned away together don't all come back together.
+ * seconds) answers `503 moving`, and a limiter with too many checks
+ * inside at once `503 busy`: Limitry was reached and charged nothing.
+ * The check (or commit, or release) is sent again with the same key only
+ * while the wait still fits in `timeoutMs`, every try and wait included
+ * — the wait is the answer's Retry-After (at least a second) plus full
+ * jitter on a growing backoff — and then the fail mode applies. These
+ * helpers sit in front of a user (a request, a page), so they answer
+ * within `timeoutMs` whatever Limitry says; and a refused check that
+ * comes back once, not for half a minute, doesn't keep an overloaded
+ * limiter full (lab, 2026-10-27: PR #307). Plain API calls keep the
+ * longer wait (./moving.ts).
  *
  * Retries are safe (docs/product idempotency): each guard or reserve
  * sends one Idempotency-Key, which the client's own retries reuse, so a
@@ -149,8 +152,8 @@ export class Unavailable extends Error {
 const UNREACHABLE = Symbol("unreachable");
 /** No answer in time: unlike an error, the check may have been decided. */
 const TIMED_OUT = Symbol("timed out");
-/** How long a settle (or a replay to find a hold) may take, retries included. */
-const SETTLE_TIMEOUT_MS = 5000;
+/** How long the background finish of a guard's timed-out check may take, retries included. */
+const FINISH_TIMEOUT_MS = 5000;
 
 export type LimitsInternals = {
   /** Waits (tests pass a fake). */
@@ -192,25 +195,46 @@ export function createLimits(
   };
 
   /**
+   * What is left of `budgetMs`: the time since the start, or the waits
+   * slept, whichever is more (a test's fake sleep takes no time).
+   */
+  function budget(budgetMs: number) {
+    const started = Date.now();
+    let slept = 0;
+    return {
+      // Whole ms: AbortSignal.timeout refuses a fraction (jitter makes them).
+      left: () => Math.ceil(budgetMs - Math.max(Date.now() - started, slept)),
+      async sleep(ms: number) {
+        slept += ms;
+        await sleep(ms);
+      },
+    };
+  }
+
+  /**
    * The decision — or UNREACHABLE (network error, 5xx, past the plan, the
-   * flood guard's 429), or TIMED_OUT (no answer within `wait`). A
-   * `moving` or `busy` answer is asked again, with the same key, for up
-   * to 30 s in all: each attempt has its own `wait`.
+   * flood guard's 429, or `moving` / `busy` until the next wait won't
+   * fit), or TIMED_OUT (no answer in time). A `moving` or `busy` answer
+   * is asked again, with the same key, while the wait fits in `budgetMs`.
    */
   async function check(
     body: Schemas["CheckRequest"],
     idempotencyKey: string,
-    wait = timeoutMs,
+    budgetMs = timeoutMs,
     finishOnly = false,
   ): Promise<Decision | typeof UNREACHABLE | typeof TIMED_OUT> {
-    let waited = 0;
+    const time = budget(budgetMs);
     for (let tries = 0; ; tries++) {
-      const answer = await checkOnce(body, idempotencyKey, wait, finishOnly);
+      const answer = await checkOnce(
+        body,
+        idempotencyKey,
+        Math.max(1, time.left()),
+        finishOnly,
+      );
       if (answer.kind !== "later") return answer.value;
       const pause = retryWaitMs(answer.retryAfterMs, tries, random);
-      if (waited + pause > MOVING_MS) return UNREACHABLE;
-      waited += pause;
-      await sleep(pause);
+      if (pause >= time.left()) return UNREACHABLE;
+      await time.sleep(pause);
     }
   }
 
@@ -240,7 +264,7 @@ export function createLimits(
             "idempotency-key": idempotencyKey,
             // `moving` and `busy` come back here at once: this loop
             // retries them.
-            [MOVING_HEADER]: "return",
+            [PRODUCT_RETRY_HEADER]: "return",
             ...(finishOnly ? { "limitry-finish-only": "1" } : {}),
           },
           signal: AbortSignal.timeout(wait),
@@ -288,17 +312,18 @@ export function createLimits(
     action: "commit" | "release",
     cost?: number,
   ) {
-    // A commit lost would leave work uncounted: `moving` or `busy` is
-    // asked again, with the same key, for up to 30 s, each attempt with
-    // its own budget.
+    // A commit lost leaves the work uncounted (an expired reservation is
+    // not charged), but it runs before the caller's result comes back:
+    // `moving` or `busy` is asked again, with the same key, only while
+    // the wait fits in `timeoutMs`.
     const idempotencyKey = crypto.randomUUID();
-    let waited = 0;
+    const time = budget(timeoutMs);
     for (let tries = 0; ; tries++) {
       let retryMs: number | null = null;
       try {
         const headers = {
           "idempotency-key": idempotencyKey,
-          [MOVING_HEADER]: "return",
+          [PRODUCT_RETRY_HEADER]: "return",
         };
         const { error, response } =
           action === "commit"
@@ -306,21 +331,20 @@ export function createLimits(
                 params: { path: { reservationId: id } },
                 body: { cost: cost ?? 0 },
                 headers,
-                signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
+                signal: AbortSignal.timeout(Math.max(1, time.left())),
               })
             : await client.POST("/reservations/{reservationId}/release", {
                 params: { path: { reservationId: id } },
                 headers,
-                signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
+                signal: AbortSignal.timeout(Math.max(1, time.left())),
               });
         if (isRetryLater(response, error))
           retryMs = retryWaitMs(retryAfterMs(response), tries, random);
       } catch {
         // The reservation expires on its own.
       }
-      if (retryMs === null || waited + retryMs > MOVING_MS) return;
-      waited += retryMs;
-      await sleep(retryMs);
+      if (retryMs === null || retryMs >= time.left()) return;
+      await time.sleep(retryMs);
     }
   }
 
@@ -332,7 +356,7 @@ export function createLimits(
     body: Schemas["CheckRequest"],
     idempotencyKey: string,
   ) {
-    const replay = await check(body, idempotencyKey, SETTLE_TIMEOUT_MS);
+    const replay = await check(body, idempotencyKey);
     if (typeof replay === "object" && replay.reservation) {
       await settle(replay.reservation.id, "release");
     }
@@ -390,7 +414,7 @@ export function createLimits(
           // subjects). Sent once more with the same key, in the background,
           // ONLY TO FINISH it — Limitry never decides it afresh then, so a
           // check that never arrived charges nothing.
-          void check(body, idempotencyKey, SETTLE_TIMEOUT_MS, true).catch(
+          void check(body, idempotencyKey, FINISH_TIMEOUT_MS, true).catch(
             () => {},
           );
         }

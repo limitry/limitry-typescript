@@ -158,6 +158,9 @@ export function resources(client: RawClient) {
         test: /** Send a test event */
 (endpointId: string | number, options?: RequestOptions) =>
   call<Output<"/workspace/webhook-endpoints/{endpointId}/test", "post">>(client, {"method":"post","path":"/workspace/webhook-endpoints/{endpointId}/test","query":[],"hasBody":false}, { "endpointId": endpointId }, undefined, options),
+        update: /** Update a webhook endpoint */
+(endpointId: string | number, input?: Input<"/workspace/webhook-endpoints/{endpointId}", "patch">, options?: RequestOptions) =>
+  call<Output<"/workspace/webhook-endpoints/{endpointId}", "patch">>(client, {"method":"patch","path":"/workspace/webhook-endpoints/{endpointId}","query":[],"hasBody":true}, { "endpointId": endpointId }, input, options),
       },
     },
   };

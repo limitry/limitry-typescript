@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   keysFrom,
   MAX_WAIT_MS,
-  MOVING_HEADER,
-  MOVING_MS,
-  JITTER_CAP_MS,
-  retryWaitMs,
-  withoutMovingHeader,
+  PRODUCT_RETRY_HEADER,
+  type ProductRetry,
+  withoutProductRetryHeader,
   withRetries,
 } from "./retry.ts";
 
@@ -42,147 +40,6 @@ const post = (init: RequestInit = {}) =>
     body: JSON.stringify({ name: "x" }),
     ...init,
   });
-
-const moving = () =>
-  json(
-    503,
-    { error: { code: "moving", message: "moving" } },
-    { "retry-after": "1" },
-  );
-
-describe("withRetries and a subject being handed over (`moving`)", () => {
-  it("keeps retrying `moving` with the same key past maxRetries, up to 30 s", async () => {
-    const { fetch, sent } = scripted([
-      moving(),
-      moving(),
-      moving(),
-      moving(),
-      json(200, { allowed: true }),
-    ]);
-    const slept: number[] = [];
-    const response = await withRetries(fetch, {
-      maxRetries: 1,
-      sleep: async (ms) => void slept.push(ms),
-      random: () => 0,
-    })(post());
-    expect(response.status).toBe(200);
-    expect(sent).toHaveLength(5);
-    expect(new Set(sent.map((s) => s.key)).size).toBe(1);
-    expect(slept).toEqual([1000, 1000, 1000, 1000]);
-  });
-
-  it("gives up after 30 s of `moving`", async () => {
-    const { fetch, sent } = scripted(Array.from({ length: 40 }, moving));
-    const response = await withRetries(fetch, {
-      sleep: noWait,
-      random: () => 0,
-    })(post());
-    expect(response.status).toBe(503);
-    expect(sent).toHaveLength(MOVING_MS / 1000 + 1);
-  });
-
-  it("waits at least a second on `moving`, so a Retry-After of 0 never spins", async () => {
-    const zero = () =>
-      json(503, { error: { code: "moving" } }, { "retry-after": "0" });
-    const { fetch, sent } = scripted(Array.from({ length: 40 }, zero));
-    const slept: number[] = [];
-    await withRetries(fetch, {
-      sleep: async (ms) => void slept.push(ms),
-      random: () => 0,
-    })(post());
-    expect(sent).toHaveLength(MOVING_MS / 1000 + 1);
-    expect(slept.every((ms) => ms === 1000)).toBe(true);
-  });
-
-  it("never sends its own header to the API, retries off or on", async () => {
-    const seen: (string | null)[] = [];
-    const fetch = async (request: Request) => {
-      seen.push(request.headers.get(MOVING_HEADER));
-      return json(200, {});
-    };
-    await withoutMovingHeader(fetch)(
-      post({ headers: { [MOVING_HEADER]: "return" } }),
-    );
-    await withRetries(fetch)(post({ headers: { [MOVING_HEADER]: "return" } }));
-    expect(seen).toEqual([null, null]);
-  });
-
-  it("hands `moving` straight back to a caller that keeps its own budget", async () => {
-    const { fetch, sent } = scripted([moving(), json(200, {})]);
-    const response = await withRetries(fetch, { sleep: noWait })(
-      post({ headers: { [MOVING_HEADER]: "return" } }),
-    );
-    expect(response.status).toBe(503);
-    expect(sent).toHaveLength(1);
-  });
-});
-
-const busy = (seconds = "2") =>
-  json(
-    503,
-    { error: { code: "busy", message: "busy" } },
-    { "retry-after": seconds },
-  );
-
-describe("withRetries and an overloaded limiter (`busy`)", () => {
-  it("retries `busy` with the same key past maxRetries, waiting Retry-After plus jitter", async () => {
-    const { fetch, sent } = scripted([
-      busy(),
-      busy(),
-      busy(),
-      json(200, { allowed: true }),
-    ]);
-    const slept: number[] = [];
-    const response = await withRetries(fetch, {
-      maxRetries: 0,
-      sleep: async (ms) => void slept.push(ms),
-      random: () => 0.5,
-    })(post());
-    expect(response.status).toBe(200);
-    expect(new Set(sent.map((s) => s.key)).size).toBe(1);
-    // 2 s from Retry-After, plus half of 250, 500, 1000 ms.
-    expect(slept).toEqual([2125, 2250, 2500]);
-  });
-
-  it("shares the 30 s budget with `moving`, and hands `busy` back to a caller with its own", async () => {
-    const mixed = scripted(
-      Array.from({ length: 40 }, (_, i) => (i % 2 ? busy("1") : moving())),
-    );
-    const slept: number[] = [];
-    const response = await withRetries(mixed.fetch, {
-      sleep: async (ms) => void slept.push(ms),
-      random: () => 0.99,
-    })(post());
-    expect(response.status).toBe(503);
-    expect(slept.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(MOVING_MS);
-    const own = scripted([busy(), json(200, {})]);
-    const back = await withRetries(own.fetch, { sleep: noWait })(
-      post({ headers: { [MOVING_HEADER]: "return" } }),
-    );
-    expect(back.status).toBe(503);
-    expect(own.sent).toHaveLength(1);
-  });
-
-  it("jitters within [Retry-After, Retry-After + min(cap, 250 × 2^n)), never under a second", () => {
-    for (let n = 0; n < 10; n++) {
-      const ceiling = Math.min(JITTER_CAP_MS, 250 * 2 ** n);
-      expect(retryWaitMs(3_000, n, () => 0)).toBe(3_000);
-      expect(retryWaitMs(3_000, n, () => 0.999999)).toBeLessThan(
-        3_000 + ceiling,
-      );
-      expect(retryWaitMs(3_000, n, () => 0.999999)).toBeGreaterThan(
-        3_000 + ceiling - 1,
-      );
-      expect(retryWaitMs(0, n, () => 0)).toBe(1_000);
-      expect(retryWaitMs(undefined, n, () => 0)).toBe(1_000);
-    }
-    // Real randomness stays inside the bounds and spreads out.
-    const seen = Array.from({ length: 200 }, () => retryWaitMs(1_000, 3));
-    expect(Math.min(...seen)).toBeGreaterThanOrEqual(1_000);
-    expect(Math.max(...seen)).toBeLessThan(1_000 + 2_000);
-    expect(new Set(seen).size).toBeGreaterThan(100);
-  });
-});
 
 describe("withRetries", () => {
   it("retries a write with the SAME key, sending the body each time", async () => {
@@ -297,5 +154,95 @@ describe("keysFrom", () => {
     expect(() => keysFrom("x".repeat(201))).toThrow(/1–200/);
     const key = keysFrom(undefined);
     expect(await key("POST", "/v1/x")).not.toBe(await key("POST", "/v1/x"));
+  });
+});
+
+describe("withRetries and a product's own retry-later answers (productRetry)", () => {
+  // A product whose `503 moving` means "same key, a second from now".
+  const moving = () => json(503, { error: { code: "moving" } });
+  const productRetry: ProductRetry = {
+    wait: async (response) => {
+      if (response.status !== 503) return null;
+      const body = (await response.clone().json()) as {
+        error?: { code?: string };
+      };
+      return body.error?.code === "moving" ? 1_000 : null;
+    },
+    budgetMs: 3_000,
+  };
+
+  it("retries them with the same key apart from maxRetries, within the budget", async () => {
+    const { fetch, sent } = scripted([
+      moving(),
+      moving(),
+      json(500, {}),
+      moving(),
+      json(201, {}),
+    ]);
+    const slept: number[] = [];
+    const response = await withRetries(fetch, {
+      maxRetries: 1,
+      product: productRetry,
+      sleep: async (ms) => void slept.push(ms),
+    })(post());
+    expect(response.status).toBe(201);
+    expect(sent).toHaveLength(5);
+    expect(new Set(sent.map((s) => s.key)).size).toBe(1);
+    expect(sent.every((s) => s.body === '{"name":"x"}')).toBe(true);
+    expect(slept.filter((ms) => ms === 1_000)).toHaveLength(3);
+  });
+
+  it("hands the answer back once the budget is spent", async () => {
+    const { fetch, sent } = scripted(Array.from({ length: 10 }, moving));
+    const response = await withRetries(fetch, {
+      product: productRetry,
+      sleep: noWait,
+    })(post());
+    expect(response.status).toBe(503);
+    expect(sent).toHaveLength(4);
+  });
+
+  it("returns them at once to a caller that sends the header, which never leaves", async () => {
+    const seen: (string | null)[] = [];
+    const { fetch } = scripted([moving()]);
+    const response = await withRetries(
+      (request) => {
+        seen.push(request.headers.get(PRODUCT_RETRY_HEADER));
+        return fetch(request);
+      },
+      { product: productRetry, sleep: noWait, maxRetries: 0 },
+    )(post({ headers: { [PRODUCT_RETRY_HEADER]: "return" } }));
+    expect(response.status).toBe(503);
+    expect(seen).toEqual([null]);
+  });
+
+  it("returns them at once to such a caller even when retries are on", async () => {
+    const { fetch, sent } = scripted([moving(), moving(), moving()]);
+    const response = await withRetries(fetch, {
+      product: productRetry,
+      sleep: noWait,
+      maxRetries: 2,
+    })(post({ headers: { [PRODUCT_RETRY_HEADER]: "return" } }));
+    expect(response.status).toBe(503);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("without a product's policy (the platform's), a 503 counts against maxRetries", async () => {
+    const { fetch, sent } = scripted([moving(), moving(), moving()]);
+    const response = await withRetries(fetch, {
+      product: null,
+      sleep: noWait,
+    })(post());
+    expect(response.status).toBe(503);
+    expect(sent).toHaveLength(3);
+  });
+
+  it("a client with retries off drops the header too", async () => {
+    let header: string | null = "unset";
+    await withoutProductRetryHeader(async (request) => {
+      header = request.headers.get(PRODUCT_RETRY_HEADER);
+      return json(200, {});
+    })(post({ headers: { [PRODUCT_RETRY_HEADER]: "return" } }));
+    expect(header).toBeNull();
   });
 });

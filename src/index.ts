@@ -4,7 +4,7 @@ import createOpenApiClient from "openapi-fetch";
 import { apiErrorFrom } from "./errors.ts";
 import * as product from "./product/index.ts";
 import { resources } from "./resources.gen.ts";
-import { withoutMovingHeader, withRetries } from "./retry.ts";
+import { withoutProductRetryHeader, withRetries } from "./retry.ts";
 import { verifyWebhook } from "./webhooks.ts";
 import type { components, paths } from "./v1.gen.ts";
 
@@ -114,13 +114,13 @@ function createBaseClient(options: ClientOptions) {
       `${brand.productName}: no API key. Pass { token } or set ${API_KEY_ENV}.`,
     );
   }
-  const origin = (options.api ?? DEFAULT_API).replace(/\/+$/, "");
+  const origin = withoutTrailingSlashes(options.api ?? DEFAULT_API);
   const send = options.fetch ?? ((request: Request) => fetch(request));
   const client = createOpenApiClient<paths>({
     baseUrl: `${origin}/v1`,
     fetch:
       options.maxRetries === 0
-        ? withoutMovingHeader(send)
+        ? withoutProductRetryHeader(send)
         : withRetries(send, { maxRetries: options.maxRetries }),
   });
   client.use({
@@ -165,3 +165,10 @@ export function unwrap<
 
 // The product's own helpers (fork-owned seam: ./product/).
 export * from "./product/index.ts";
+
+/** `url` without trailing slashes — a loop, not a regex (CodeQL js/polynomial-redos). */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+}

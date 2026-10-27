@@ -567,7 +567,7 @@ export interface paths {
         };
         /**
          * Get your plan's usage this period
-         * @description How much of each meter the workspace used this period, with the plan's limit for it (null = unlimited). A period is a month from the workspace's billing date: its subscription's (an annual plan refills monthly from its start), else the day the workspace was created.
+         * @description How much of each meter the workspace used this period, with the plan's limit for it (null = unlimited). A period is a month from the workspace's billing date: its subscription's (an annual plan's counts reset monthly from its start), else the day the workspace was created.
          */
         get: operations["workspace.usage"];
         put?: never;
@@ -623,7 +623,11 @@ export interface paths {
         delete: operations["workspace.webhookEndpoints.delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a webhook endpoint
+         * @description Changes an endpoint's URL, description or event types in place; only the fields sent change. The endpoint keeps its signing secret, so receivers keep verifying deliveries. A new URL passes the same checks as on create: https only, no private hosts.
+         */
+        patch: operations["workspace.webhookEndpoints.update"];
         trace?: never;
     };
     "/workspace/webhook-endpoints/{endpointId}/deliveries": {
@@ -3928,6 +3932,97 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Missing, malformed, invalid, revoked, or expired credential — API key or personal access token (code: unauthorized). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description A personal access token that cannot act in the named workspace (unknown slug, not a member, or excluded by the token's scopes), is not granted this route's scope, or lacks the workspace role the route requires (code: forbidden). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No such endpoint (or delivery) in this workspace (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Per-key quota exhausted (code: rate_limited); retry after the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    "workspace.webhookEndpoints.update": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The environment the request acts in; without it, the product's default. An API key bound to an environment always acts in its own (403 naming another); an unknown environment is 400. */
+                "x-environment"?: string;
+                /** @description Workspace slug. REQUIRED when authenticating with a personal access token (400 without it); ignored for API keys. */
+                "x-workspace"?: string;
+            };
+            path: {
+                endpointId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description A note for people managing the endpoint; null clears it. */
+                    description?: string | null;
+                    /**
+                     * @description Only these event types (see event-types); null or an empty list for every event.
+                     * @example [
+                     *       "workspace.member.joined"
+                     *     ]
+                     */
+                    eventTypes?: string[] | null;
+                    /**
+                     * @description The https URL that receives the events.
+                     * @example https://example.com/hooks
+                     */
+                    url?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated endpoint. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpoint"];
+                };
+            };
+            /** @description Invalid request (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
             /** @description Missing, malformed, invalid, revoked, or expired credential — API key or personal access token (code: unauthorized). */
             401: {
