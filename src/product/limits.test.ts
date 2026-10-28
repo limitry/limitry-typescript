@@ -564,6 +564,192 @@ describe("reserve", () => {
   });
 });
 
+describe("an open concurrent limit when Limitry can't answer", () => {
+  // A decision naming a concurrent limit of `amount` (and a daily one).
+  const concurrent = (amount: number) =>
+    Response.json({
+      id: "chk_1",
+      allowed: true,
+      reason: null,
+      limits: [
+        {
+          limitId: "lmt_c",
+          name: "Runs at once",
+          unit: "runs",
+          window: "concurrent",
+          rolling: false,
+          failMode: "open",
+          amount,
+          remaining: amount - 1,
+          resetsAt: null,
+        },
+        {
+          limitId: "lmt_d",
+          name: "Runs a day",
+          unit: "runs",
+          window: "day",
+          rolling: false,
+          failMode: "open",
+          amount: 1000,
+          remaining: 999,
+          resetsAt: null,
+        },
+      ],
+      retryAfterSeconds: null,
+      reservation: { id: "rsv_1", expiresAt: "2026-10-28T00:05:00Z" },
+    });
+  const settled = () => Response.json({ id: "rsv_1", status: "committed" });
+
+  /** Work that runs until `open()` is called. */
+  function gate() {
+    let open!: () => void;
+    const opened = new Promise<void>((done) => (open = done));
+    return { open, work: vi.fn(async () => (await opened, "ran")) };
+  }
+
+  for (const [what, failure] of [
+    ["a 500", () => new Response("oops", { status: 500 })],
+    ["no answer in time", () => new Promise<Response>(() => {})],
+    [
+      "a 402 plan_limit_reached",
+      () =>
+        Response.json(
+          { error: { code: "plan_limit_reached", message: "past the plan" } },
+          { status: 402 },
+        ),
+    ],
+    [
+      "a network error",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+  ] as [string, () => Response | Promise<Response>][]) {
+    it(`runs at most the amount at once after ${what}, and the rest throw Unavailable`, async () => {
+      let down = false;
+      const { limits } = limitsWith(
+        (path) =>
+          path !== "/checks" ? settled() : down ? failure() : concurrent(2),
+        { timeoutMs: 50 },
+      );
+      await limits.reserve({ subject, action: "run" }, async () => 1);
+      down = true;
+      const { open, work } = gate();
+      const runs = [1, 2, 3].map(() =>
+        limits
+          .reserve({ subject, action: "run" }, work)
+          .catch((e: unknown) => e),
+      );
+      const third = await runs[2];
+      expect(third).toBeInstanceOf(Unavailable);
+      expect(work).toHaveBeenCalledTimes(2);
+      open();
+      expect(await Promise.all(runs.slice(0, 2))).toEqual(["ran", "ran"]);
+      // Those finished: a slot is free again.
+      expect(
+        await limits.reserve({ subject, action: "run" }, async () => "again"),
+      ).toBe("again");
+    });
+  }
+
+  it("counts runs Limitry answered that are still going", async () => {
+    let down = false;
+    const { limits } = limitsWith((path) =>
+      path !== "/checks"
+        ? settled()
+        : down
+          ? new Response("oops", { status: 500 })
+          : concurrent(2),
+    );
+    const answered = gate();
+    const first = limits.reserve({ subject, action: "run" }, answered.work);
+    await vi.waitFor(() => expect(answered.work).toHaveBeenCalled());
+    down = true;
+    const second = gate();
+    const running = limits.reserve({ subject, action: "run" }, second.work);
+    await vi.waitFor(() => expect(second.work).toHaveBeenCalled());
+    await expect(
+      limits.reserve({ subject, action: "run" }, async () => "x"),
+    ).rejects.toBeInstanceOf(Unavailable);
+    answered.open();
+    second.open();
+    await Promise.all([first, running]);
+  });
+
+  it("holds each subject and action to its own amount", async () => {
+    let down = false;
+    const { limits } = limitsWith((path) =>
+      path !== "/checks"
+        ? settled()
+        : down
+          ? new Response("oops", { status: 500 })
+          : concurrent(1),
+    );
+    const other = { kind: "user", id: "u2" };
+    await limits.reserve({ subject, action: "run" }, async () => 1);
+    await limits.reserve({ subject: other, action: "run" }, async () => 1);
+    down = true;
+    const { open, work } = gate();
+    const mine = limits.reserve({ subject, action: "run" }, work);
+    const theirs = limits.reserve({ subject: other, action: "run" }, work);
+    await vi.waitFor(() => expect(work).toHaveBeenCalledTimes(2));
+    open();
+    expect(await Promise.all([mine, theirs])).toEqual(["ran", "ran"]);
+  });
+
+  it("runs everything, as before, with nothing remembered or no concurrent limit", async () => {
+    // Never seen a decision.
+    const fresh = limitsWith(() => new Response("oops", { status: 500 }));
+    const a = gate();
+    const runs = [1, 2, 3].map(() =>
+      fresh.limits.reserve({ subject, action: "run" }, a.work),
+    );
+    await vi.waitFor(() => expect(a.work).toHaveBeenCalledTimes(3));
+    a.open();
+    await Promise.all(runs);
+    // Seen one with no concurrent limit (a daily one only).
+    let down = false;
+    const { limits } = limitsWith((path) =>
+      path !== "/checks"
+        ? settled()
+        : down
+          ? new Response("oops", { status: 500 })
+          : decision(true, "open", {
+              reservation: { id: "rsv_1", expiresAt: "2026-10-28T00:05:00Z" },
+            }),
+    );
+    await limits.reserve({ subject, action: "run" }, async () => 1);
+    down = true;
+    const b = gate();
+    const more = [1, 2, 3].map(() =>
+      limits.reserve({ subject, action: "run" }, b.work),
+    );
+    await vi.waitFor(() => expect(b.work).toHaveBeenCalledTimes(3));
+    b.open();
+    await Promise.all(more);
+  });
+
+  it("leaves guard alone: it takes no slot", async () => {
+    let down = false;
+    const { limits } = limitsWith((path) =>
+      path !== "/checks"
+        ? settled()
+        : down
+          ? new Response("oops", { status: 500 })
+          : concurrent(1),
+    );
+    await limits.reserve({ subject, action: "run" }, async () => 1);
+    down = true;
+    const { open, work } = gate();
+    const runs = [1, 2].map(() =>
+      limits.guard({ subject, action: "run" }, work),
+    );
+    await vi.waitFor(() => expect(work).toHaveBeenCalledTimes(2));
+    open();
+    await Promise.all(runs);
+  });
+});
+
 describe("standing", () => {
   function limitsAnswering(response: () => Response) {
     const urls: URL[] = [];

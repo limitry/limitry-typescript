@@ -35,7 +35,14 @@ import { retryWaitMs } from "./moving.ts";
  * limit's fail mode decides: the last decision's `failMode` for this
  * subject and action is remembered in memory, and `closed` throws
  * `Unavailable` while `open` — the default, and the answer before any
- * decision was seen — lets the work run unmetered.
+ * decision was seen — lets the work run unmetered. One exception: an
+ * `open` concurrent limit is held to its amount in this process
+ * (design-fallback.md). `reserve` counts the runs it has going per
+ * subject and action, answered or not, and remembers the smallest
+ * concurrent limit's `amount` from the last decision; while Limitry
+ * can't answer, a reserve that would pass that amount throws
+ * `Unavailable`. The count is this process's only: several servers may
+ * together run more, bounded where it was unbounded.
  *
  * A subject being handed over between Limitry's servers (a split, a few
  * seconds) answers `503 moving`, and a limiter with too many checks
@@ -185,7 +192,26 @@ export function createLimits(
     `${s.kind}\u0000${s.id}\u0000${action}`;
   const failMode = (s: Subject, action: string) =>
     options.failMode ?? remembered.get(key(s, action)) ?? "open";
+  /**
+   * The smallest concurrent limit's amount last seen per subject + action,
+   * and the reserves this client has going for each, answered or not
+   * (design-fallback.md): an `open` concurrent limit is held to its
+   * amount in this process when Limitry can't answer.
+   */
+  const concurrentAmounts = new Map<string, number>();
+  const running = new Map<string, number>();
   const remember = (s: Subject, action: string, decision: Decision) => {
+    const amounts = decision.limits
+      .filter((r) => r.window === "concurrent" && typeof r.amount === "number")
+      .map((r) => r.amount);
+    if (amounts.length > 0) {
+      concurrentAmounts.set(key(s, action), Math.min(...amounts));
+      if (concurrentAmounts.size > 10_000) {
+        concurrentAmounts.delete(concurrentAmounts.keys().next().value!);
+      }
+    } else {
+      concurrentAmounts.delete(key(s, action));
+    }
     if (options.failMode) return;
     const closed = decision.limits.some((r) => r.failMode === "closed");
     remembered.set(key(s, action), closed ? "closed" : "open");
@@ -445,62 +471,90 @@ export function createLimits(
         ttlSeconds: request.ttlSeconds,
       };
       const idempotencyKey = crypto.randomUUID();
-      const decision = await check(body, idempotencyKey);
-      const unmetered: Reservation = {
-        // Checked even unmetered: the mistake shows whether or not
-        // Limitry answered.
-        cost: (units) => void checkedCost(units),
-        extend: async () => {},
-      };
-      if (decision === UNREACHABLE || decision === TIMED_OUT) {
-        const unheard = () =>
-          decision === TIMED_OUT
-            ? releaseUnheard(body, idempotencyKey)
-            : Promise.resolve();
-        if (failMode(request.subject, request.action) === "closed") {
-          await unheard();
-          throw new Unavailable();
-        }
-        try {
-          return await fn(unmetered);
-        } finally {
-          await unheard();
-        }
-      }
-      remember(request.subject, request.action, decision);
-      if (!decision.allowed || !decision.reservation) {
-        throw new LimitReached(decision);
-      }
-      const id = decision.reservation.id;
-      let used = reserved;
-      const reservation: Reservation = {
-        cost(units) {
-          used = checkedCost(units);
-        },
-        async extend(ttlSeconds) {
-          // Passed as given: the API refuses a bad one (0, past 3600).
-          const { error, response } = await client.POST(
-            "/reservations/{reservationId}/extend",
-            {
-              params: { path: { reservationId: id } },
-              body: ttlSeconds === undefined ? {} : { ttlSeconds },
-              signal: AbortSignal.timeout(timeoutMs),
-            },
-          );
-          if (error !== undefined) throw apiErrorFrom(error, response);
-        },
-      };
-      let result: T;
+      const slot = key(request.subject, request.action);
+      // Runs this client already has going for the subject and action.
+      const before = running.get(slot) ?? 0;
+      running.set(slot, before + 1);
       try {
-        result = await fn(reservation);
-      } catch (error) {
-        await settle(id, "release");
-        throw error;
+        return await reserveOnce(request, fn, body, idempotencyKey, before);
+      } finally {
+        const left = (running.get(slot) ?? 1) - 1;
+        if (left > 0) running.set(slot, left);
+        else running.delete(slot);
       }
-      await settle(id, "commit", used);
-      return result;
     },
   };
+
+  async function reserveOnce<T>(
+    request: ReserveRequest,
+    fn: (reservation: Reservation) => Promise<T>,
+    body: Schemas["CheckRequest"],
+    idempotencyKey: string,
+    before: number,
+  ): Promise<T> {
+    const reserved = request.cost ?? 1;
+    const decision = await check(body, idempotencyKey);
+    const unmetered: Reservation = {
+      // Checked even unmetered: the mistake shows whether or not
+      // Limitry answered.
+      cost: (units) => void checkedCost(units),
+      extend: async () => {},
+    };
+    if (decision === UNREACHABLE || decision === TIMED_OUT) {
+      const unheard = () =>
+        decision === TIMED_OUT
+          ? releaseUnheard(body, idempotencyKey)
+          : Promise.resolve();
+      const amount = concurrentAmounts.get(
+        key(request.subject, request.action),
+      );
+      if (
+        failMode(request.subject, request.action) === "closed" ||
+        // Open, but never past a concurrent limit's amount here.
+        (amount !== undefined && before >= amount)
+      ) {
+        await unheard();
+        throw new Unavailable();
+      }
+      try {
+        return await fn(unmetered);
+      } finally {
+        await unheard();
+      }
+    }
+    remember(request.subject, request.action, decision);
+    if (!decision.allowed || !decision.reservation) {
+      throw new LimitReached(decision);
+    }
+    const id = decision.reservation.id;
+    let used = reserved;
+    const reservation: Reservation = {
+      cost(units) {
+        used = checkedCost(units);
+      },
+      async extend(ttlSeconds) {
+        // Passed as given: the API refuses a bad one (0, past 3600).
+        const { error, response } = await client.POST(
+          "/reservations/{reservationId}/extend",
+          {
+            params: { path: { reservationId: id } },
+            body: ttlSeconds === undefined ? {} : { ttlSeconds },
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+        if (error !== undefined) throw apiErrorFrom(error, response);
+      },
+    };
+    let result: T;
+    try {
+      result = await fn(reservation);
+    } catch (error) {
+      await settle(id, "release");
+      throw error;
+    }
+    await settle(id, "commit", used);
+    return result;
+  }
 }
 
 export type Limits = ReturnType<typeof createLimits>;

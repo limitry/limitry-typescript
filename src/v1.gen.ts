@@ -804,6 +804,11 @@ export interface components {
         };
         CheckLimit: {
             /**
+             * @description The limit's amount: units per window, or for a `concurrent` limit how many at once. SDKs hold an `open` concurrent limit to it when Limitry can't be reached.
+             * @example 200
+             */
+            amount: number;
+            /**
              * @description What to do if Limitry cannot be reached next time: `open` allows, `closed` denies. SDKs remember it.
              * @enum {string}
              */
