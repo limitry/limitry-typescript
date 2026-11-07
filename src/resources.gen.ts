@@ -23,8 +23,8 @@ export function resources(client: RawClient) {
 (limitId: string | number, input: Input<"/limits/{limitId}/credits", "post">, options?: RequestOptions) =>
   call<Output<"/limits/{limitId}/credits", "post">>(client, {"method":"post","path":"/limits/{limitId}/credits","query":[],"hasBody":true}, { "limitId": limitId }, input, options),
         list: /** List a balance's credits */
-(limitId: string | number, options?: RequestOptions) =>
-  call<Output<"/limits/{limitId}/credits", "get">>(client, {"method":"get","path":"/limits/{limitId}/credits","query":[],"hasBody":false}, { "limitId": limitId }, undefined, options),
+(limitId: string | number, input?: Input<"/limits/{limitId}/credits", "get">, options?: RequestOptions) =>
+  call<Output<"/limits/{limitId}/credits", "get">>(client, {"method":"get","path":"/limits/{limitId}/credits","query":["limit","cursor","before","subjectId"],"hasBody":false}, { "limitId": limitId }, input, options),
       },
       get: /** Get a limit */
 (limitId: string | number, options?: RequestOptions) =>
@@ -103,7 +103,7 @@ export function resources(client: RawClient) {
       auditEvents: {
         list: /** List workspace audit events */
 (input?: Input<"/workspace/audit-events", "get">, options?: RequestOptions) =>
-  call<Output<"/workspace/audit-events", "get">>(client, {"method":"get","path":"/workspace/audit-events","query":["limit","cursor"],"hasBody":false}, {  }, input, options),
+  call<Output<"/workspace/audit-events", "get">>(client, {"method":"get","path":"/workspace/audit-events","query":["limit","cursor","before","action","actor"],"hasBody":false}, {  }, input, options),
       },
       eventTypes: {
         list: /** List event types */
@@ -134,7 +134,7 @@ export function resources(client: RawClient) {
       webhookDeliveries: {
         list: /** List an endpoint's deliveries */
 (endpointId: string | number, input?: Input<"/workspace/webhook-endpoints/{endpointId}/deliveries", "get">, options?: RequestOptions) =>
-  call<Output<"/workspace/webhook-endpoints/{endpointId}/deliveries", "get">>(client, {"method":"get","path":"/workspace/webhook-endpoints/{endpointId}/deliveries","query":["limit","cursor"],"hasBody":false}, { "endpointId": endpointId }, input, options),
+  call<Output<"/workspace/webhook-endpoints/{endpointId}/deliveries", "get">>(client, {"method":"get","path":"/workspace/webhook-endpoints/{endpointId}/deliveries","query":["limit","cursor","before","status"],"hasBody":false}, { "endpointId": endpointId }, input, options),
         redeliver: /** Redeliver an event */
 (endpointId: string | number, deliveryId: string | number, options?: RequestOptions) =>
   call<Output<"/workspace/webhook-endpoints/{endpointId}/deliveries/{deliveryId}/redeliver", "post">>(client, {"method":"post","path":"/workspace/webhook-endpoints/{endpointId}/deliveries/{deliveryId}/redeliver","query":[],"hasBody":false}, { "endpointId": endpointId, "deliveryId": deliveryId }, undefined, options),

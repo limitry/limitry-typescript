@@ -99,7 +99,7 @@ export interface paths {
         };
         /**
          * List a balance's credits
-         * @description Lists the credits added to subjects' balances on this limit, including any taken back. It returns the newest 200, newest first.
+         * @description Lists the credits added to subjects' balances on this limit, including any taken back, newest first. Page through them with the opaque `nextCursor`. `before` starts from a moment, and `subjectId` keeps one subject's credits.
          */
         get: operations["limits.credits.list"];
         put?: never;
@@ -467,7 +467,7 @@ export interface paths {
         };
         /**
          * List workspace audit events
-         * @description Lists the workspace's audit events, newest first. Paginate with the opaque `nextCursor` token. `limit` takes 1 to 100 and defaults to 25. With a personal access token, only workspace owners can call this, as with the audit page in the app. A workspace API key always can, because it acts as the workspace itself.
+         * @description Lists the workspace's audit events, newest first. Paginate with the opaque `nextCursor` token. `limit` takes 1 to 100 and defaults to 25. `before` starts from a moment. `action` keeps one kind of event, and `actor` what one person, key or token did. With a personal access token, only workspace owners can call this, as with the audit page in the app. A workspace API key always can, because it acts as the workspace itself.
          */
         get: operations["workspace.auditEvents.list"];
         put?: never;
@@ -639,7 +639,7 @@ export interface paths {
         };
         /**
          * List an endpoint's deliveries
-         * @description Lists one endpoint's delivery history, newest first. Each entry shows the event's status, attempts and last HTTP status. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Lists one endpoint's delivery history, newest first. Each entry shows the event's status, attempts and last HTTP status. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. `before` starts from a moment, and `status` keeps one kind of delivery. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
          */
         get: operations["workspace.webhookDeliveries.list"];
         put?: never;
@@ -780,6 +780,14 @@ export interface components {
         AuditEvent: {
             /** @example workspace.member_invited */
             action: string;
+            /** @description Who acted. */
+            actor: {
+                /**
+                 * @description The person who acted, for a `user` actor. Null for anyone else. Pass `user:` and this id as `actor` to see only what they did.
+                 * @example usr_k3TAiF2ZP5sQ
+                 */
+                id: string | null;
+            };
             /**
              * @description Who is accountable: `user`, `staff`, `system` or `api_key`.
              * @example user
@@ -789,6 +797,11 @@ export interface components {
             createdAt: string;
             /** @description The API credential the action came through, with the name it had at the time. Null for actions taken in the app. */
             credential: {
+                /**
+                 * @description The key or token. Pass `credential:` and this id as `actor` to see only what it did.
+                 * @example key_8a1bQ2
+                 */
+                id: string | null;
                 /** @example ci */
                 name: string | null;
                 /**
@@ -972,6 +985,11 @@ export interface components {
                 id: string;
                 kind: string;
             };
+        };
+        CreditPage: {
+            items: components["schemas"]["Credit"][];
+            /** @description Pass as ?cursor= to fetch the next page. */
+            nextCursor: string | null;
         };
         ErrorEnvelope: {
             error: {
@@ -2131,7 +2149,16 @@ export interface operations {
     };
     "limits.credits.list": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Start from this moment: items older than it, newest first. Ignored with `cursor`, which already says where to go on. */
+                before?: string;
+                /** @description Opaque token from a previous page's nextCursor. */
+                cursor?: string;
+                /** @description Items per page, 1–100 (default 25). */
+                limit?: number;
+                /** @description Only the credits for this subject. */
+                subjectId?: string;
+            };
             header?: {
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
@@ -2145,15 +2172,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The credits. */
+            /** @description One page of credits. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["Credit"][];
-                    };
+                    "application/json": components["schemas"]["CreditPage"];
+                };
+            };
+            /** @description Malformed cursor or query (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -3595,6 +3629,12 @@ export interface operations {
     "workspace.auditEvents.list": {
         parameters: {
             query?: {
+                /** @description Only events of this action. */
+                action?: string;
+                /** @description Only what one person did (`user:` and the item's `actor.id`), or one key or token (`credential:` and the item's `credential.id`). */
+                actor?: string;
+                /** @description Start from this moment: items older than it, newest first. Ignored with `cursor`, which already says where to go on. */
+                before?: string;
                 /** @description Opaque token from a previous page's nextCursor. */
                 cursor?: string;
                 /** @description Items per page, 1–100 (default 25). */
@@ -4317,10 +4357,14 @@ export interface operations {
     "workspace.webhookDeliveries.list": {
         parameters: {
             query?: {
+                /** @description Start from this moment: items older than it, newest first. Ignored with `cursor`, which already says where to go on. */
+                before?: string;
                 /** @description Opaque token from a previous page's nextCursor. */
                 cursor?: string;
                 /** @description Items per page, 1–100 (default 25). */
                 limit?: number;
+                /** @description Only deliveries with this status. */
+                status?: "pending" | "delivered" | "failed";
             };
             header?: {
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
