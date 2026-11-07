@@ -1,0 +1,74 @@
+name: Release
+
+# On a v* tag (written with the release by Limitry's own
+# repository): build and test, then publish to npm through trusted
+# publishing (no token; npm attaches provenance pointing at this
+# repository). Two jobs, so no dependency's code runs where the
+# credential exists.
+on:
+  push:
+    tags: ["v*"]
+
+# One release at a time, so each sees the one before it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5
+      - name: Version from the tag (v1.2.3 → 1.2.3)
+        id: version
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF' is not v<semver>."; exit 1
+          fi
+          test "$(node -p 'require("./package.json").version')" = "$version" || { echo "::error::package.json is not $version."; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: mkdir -p "$RUNNER_TEMP/package" && npm pack --pack-destination "$RUNNER_TEMP/package"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Longer than the wait for npm to show the tag (versions.mjs
+    # await-tag, 15 minutes): npm's processing can take that long.
+    timeout-minutes: 25
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package/
+      - name: Publish to npm (trusted publishing)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          package=$(ls "$RUNNER_TEMP"/package/*.tgz)
+          name=$(node -p 'require("./package.json").name')
+          # The dist-tag by Limitry's release rules (.github/scripts/versions.mjs):
+          # latest, next, or latest-X.Y / next-X.Y for an older line.
+          tag=$(node .github/scripts/versions.mjs plan npm "$name" "$VERSION" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).npmTag')
+          npm publish "$package" --access public --tag "$tag"
+          node .github/scripts/versions.mjs await-tag "$name" "$tag" "$VERSION"
