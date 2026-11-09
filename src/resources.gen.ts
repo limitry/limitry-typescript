@@ -65,15 +65,18 @@ export function resources(client: RawClient) {
   call<Output<"/subjects/{subjectKind}/{subjectId}", "patch">>(client, {"method":"patch","path":"/subjects/{subjectKind}/{subjectId}","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),
     },
     usage: {
+      overview: /** Get every limit's usage at once */
+(input?: Input<"/usage/overview", "get">, options?: RequestOptions) =>
+  call<Output<"/usage/overview", "get">>(client, {"method":"get","path":"/usage/overview","query":["period","from","to","sort","top"],"hasBody":false}, {  }, input, options),
       query: /** Get a limit's usage over time */
-(input: Input<"/usage", "get">, options?: RequestOptions) =>
-  call<Output<"/usage", "get">>(client, {"method":"get","path":"/usage","query":["limitId","subject","from","to","granularity"],"hasBody":false}, {  }, input, options),
+(input?: Input<"/usage", "get">, options?: RequestOptions) =>
+  call<Output<"/usage", "get">>(client, {"method":"get","path":"/usage","query":["limitId","limitName","subject","period","from","to","granularity"],"hasBody":false}, {  }, input, options),
       standing: /** Get where a subject stands */
 (input: Input<"/usage/standing", "get">, options?: RequestOptions) =>
   call<Output<"/usage/standing", "get">>(client, {"method":"get","path":"/usage/standing","query":["subject","shared"],"hasBody":false}, {  }, input, options),
-      subjects: /** List who is using a limit now */
-(input: Input<"/usage/subjects", "get">, options?: RequestOptions) =>
-  call<Output<"/usage/subjects", "get">>(client, {"method":"get","path":"/usage/subjects","query":["limitId","limit"],"hasBody":false}, {  }, input, options),
+      subjects: /** List who is using a limit */
+(input?: Input<"/usage/subjects", "get">, options?: RequestOptions) =>
+  call<Output<"/usage/subjects", "get">>(client, {"method":"get","path":"/usage/subjects","query":["limitId","limitName","period","from","to","sort","limit"],"hasBody":false}, {  }, input, options),
     },
     user: {
       me: /** Get the current user */

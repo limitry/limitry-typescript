@@ -267,9 +267,29 @@ export interface paths {
         };
         /**
          * Get a limit's usage over time
-         * @description Returns one limit's usage over time: the units used, and the checks allowed and refused. It covers every subject, or one subject named in `subject` as `kind:id`. Usage comes in hourly or daily buckets in UTC, and the response includes every bucket in the range. It can be up to about a minute behind live checks. By default, it covers the last 30 days, by day. A request returns at most 2,000 buckets. Usage older than your plan's history isn't returned.
+         * @description Returns one limit's usage over time: the units used, and the checks allowed and refused, with the range's `total` beside the buckets. It covers every subject, or one subject named in `subject` as `kind:id`. Name the limit by `limitId` or `limitName`. Choose the range with `period` (such as `last_month`) or `from` and `to`. Usage comes in hourly or daily buckets in UTC, and the response includes every bucket in the range. It can be up to about a minute behind live checks. By default, it covers the last 30 days, by day. A request returns at most 2,000 buckets. Usage older than your plan's history isn't returned.
          */
         get: operations["usage.query"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/usage/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get every limit's usage at once
+         * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance also lists the credits added to it in the range. Usage older than your plan's history isn't returned.
+         */
+        get: operations["usage.overview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -306,8 +326,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List who is using a limit now
-         * @description Lists a limit's subjects in its current window, most used first. Each one shows the units used, what's left and how many checks the limit refused. The amounts are exact, but a subject first checked in the last minute may not appear yet. For a `concurrent` limit, it lists the slots each subject holds now, among the subjects checked in the last hour.
+         * List who is using a limit
+         * @description Lists a limit's subjects in its current window, most used first. Each one shows the units used, what's left and how many checks the limit refused. The amounts are exact, but a subject first checked in the last minute may not appear yet. For a `concurrent` limit, it lists the slots each subject holds now, among the subjects checked in the last hour. Name the limit by `limitId` or `limitName`. For a past range, send `period`, such as `last_month`, or `from` and `to`. The subjects are then ranked by their use in that range, from history. Each one's `remaining` is then null. Set `sort` to `refused` to list the most refused first. Usage older than your plan's history isn't returned.
          */
         get: operations["usage.subjects"];
         put?: never;
@@ -587,13 +607,13 @@ export interface paths {
         };
         /**
          * List webhook endpoints
-         * @description Lists the workspace's outgoing webhook endpoints, newest first. The list leaves out their signing secrets. A workspace has at most 10 endpoints, so the list is a single page. Its `nextCursor` is null. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Lists the workspace's outgoing webhook endpoints, newest first. The list leaves out their signing secrets. A workspace has at most 10 endpoints, so the list is a single page. Its `nextCursor` is null. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         get: operations["workspace.webhookEndpoints.list"];
         put?: never;
         /**
          * Add a webhook endpoint
-         * @description Registers an HTTPS URL to receive the workspace's events. Deliveries use the same signature format as Svix. The response includes the endpoint's signing secret (`whsec_…`). You see it only once, so store it to verify deliveries. The API refuses private hosts and hosts without HTTPS. A workspace can have at most 10 endpoints. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Registers an HTTPS URL to receive the workspace's events. Deliveries use the same signature format as Svix. The response includes the endpoint's signing secret (`whsec_…`). You see it only once, so store it to verify deliveries. The API refuses private hosts and hosts without HTTPS. A workspace can have at most 10 endpoints. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookEndpoints.create"];
         delete?: never;
@@ -611,21 +631,21 @@ export interface paths {
         };
         /**
          * Get a webhook endpoint
-         * @description Returns one endpoint without its signing secret. It shows whether the endpoint is on, its consecutive failures and its last delivery status. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Returns one endpoint without its signing secret. It shows whether the endpoint is on, its consecutive failures and its last delivery status. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         get: operations["workspace.webhookEndpoints.get"];
         put?: never;
         post?: never;
         /**
          * Remove a webhook endpoint
-         * @description Deletes the endpoint and its signing secret. All deliveries to the endpoint stop. Its delivery history goes with it. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Deletes the endpoint and its signing secret. All deliveries to the endpoint stop. Its delivery history goes with it. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         delete: operations["workspace.webhookEndpoints.delete"];
         options?: never;
         head?: never;
         /**
          * Update a webhook endpoint
-         * @description Changes an endpoint's URL, description or event types in place. Only the fields you send change. The endpoint keeps its signing secret, so receivers keep verifying deliveries. A new URL must pass the same checks as on create. It must use HTTPS and can't be a private host. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Changes an endpoint's URL, description or event types in place. Only the fields you send change. The endpoint keeps its signing secret, so receivers keep verifying deliveries. A new URL must pass the same checks as on create. It must use HTTPS and can't be a private host. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         patch: operations["workspace.webhookEndpoints.update"];
         trace?: never;
@@ -639,7 +659,7 @@ export interface paths {
         };
         /**
          * List an endpoint's deliveries
-         * @description Lists one endpoint's delivery history, newest first. Each entry shows the event's status, attempts and last HTTP status. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. `before` starts from a moment, and `status` keeps one kind of delivery. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Lists one endpoint's delivery history, newest first. Each entry shows the event's status, attempts and last HTTP status. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. `before` starts from a moment, and `status` keeps one kind of delivery. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         get: operations["workspace.webhookDeliveries.list"];
         put?: never;
@@ -661,7 +681,7 @@ export interface paths {
         put?: never;
         /**
          * Redeliver an event
-         * @description Sends a recorded delivery's event again, as a new delivery. The new delivery gets its own history entry. The event id stays the same, so receivers can deduplicate. Redelivery only works on an enabled endpoint. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Sends a recorded delivery's event again, as a new delivery. The new delivery gets its own history entry. The event id stays the same, so receivers can deduplicate. Redelivery only works on an enabled endpoint. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookDeliveries.redeliver"];
         delete?: never;
@@ -681,7 +701,7 @@ export interface paths {
         put?: never;
         /**
          * Re-enable a webhook endpoint
-         * @description Resumes deliveries to an endpoint that stopped after repeated failures. The endpoint keeps its signing secret. Its failure count resets. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Resumes deliveries to an endpoint that stopped after repeated failures. The endpoint keeps its signing secret. Its failure count resets. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookEndpoints.enable"];
         delete?: never;
@@ -701,7 +721,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test event
-         * @description Sends a `ping` event to the endpoint, signed like every delivery. Use it to check that an integration verifies and accepts deliveries. With a personal access token, only workspace owners can call this. A workspace API key with this scope can.
+         * @description Sends a `ping` event to the endpoint, signed like every delivery. Use it to check that an integration verifies and accepts deliveries. With a personal access token, only the workspace owner can call this. So can an admin in a Developer seat. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookEndpoints.test"];
         delete?: never;
@@ -1021,6 +1041,11 @@ export interface components {
             /** @example member */
             role: string | null;
             /**
+             * @description The seat type the person will hold on accepting. Null for a guest, or where the product has no seat types.
+             * @example runners
+             */
+            seat: string | null;
+            /**
              * @description The teams the person joins on accepting. Everyone except a guest also joins the default team.
              * @example [
              *       "5cfbfbdc-bd74-4b1b-aacf-cc18a0ab960e"
@@ -1092,11 +1117,6 @@ export interface components {
             unit: string;
             /** @example 2026-10-04T12:00:00.000Z */
             updatedAt: string;
-            /**
-             * @description A number that goes up with every change to the limit.
-             * @example 3
-             */
-            version: number;
             /**
              * @description The kind of period. `minute`, `hour`, `day`, `week`, `month` and `year` count a period of `every` windows, which resets where `start` says, or rolls when `rolling` is true. `total` is a balance that never resets, and credits raise it. `concurrent` allows at most `amount` open reservations at once.
              * @example month
@@ -1319,6 +1339,11 @@ export interface components {
              * @example member
              */
             role: string;
+            /**
+             * @description The seat type the member holds, where the product has seat types: it decides what they do here. Null for a guest, or where the product has none.
+             * @example publishers
+             */
+            seat: string | null;
             /** @example Vb2KqW8nRx4LmT6pYc9HsJ3dFg7Na1Ue */
             userId: string;
         };
@@ -1428,14 +1453,22 @@ export interface components {
             nextCursor: string | null;
         };
         UsageBySubject: {
+            /**
+             * @description How much each subject may use per window.
+             * @example 200
+             */
+            amount: number;
             items: {
                 /**
-                 * @description The checks this limit refused for the subject in this window.
+                 * @description The checks this limit refused for the subject in the window or range.
                  * @example 2
                  */
                 refused: number;
-                /** @example 80 */
-                remaining: number;
+                /**
+                 * @description What's left in the current window. Null for a past range.
+                 * @example 80
+                 */
+                remaining: number | null;
                 /**
                  * @example {
                  *       "kind": "user",
@@ -1451,13 +1484,149 @@ export interface components {
             }[];
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
+            /** @example AI budget */
+            limitName: string;
             /**
-             * @description When the current window started.
+             * @description The past range the list covers, or null for the current window. Its start is the plan's history limit when you asked for earlier.
+             * @example null
+             */
+            range: {
+                /** @example 2026-10-01T00:00:00.000Z */
+                from: string;
+                /** @example 2026-11-01T00:00:00.000Z */
+                to: string;
+            } | null;
+            /**
+             * @description When the current window ends, for a calendar window every subject shares. Null for a past range, a balance, concurrent slots, a rolling window, or periods each subject keeps on its own.
+             * @example 2026-12-01T00:00:00.000Z
+             */
+            resetsAt: string | null;
+            /**
+             * @description What the limit counts in, such as `cents` or `requests`.
+             * @example cents
+             */
+            unit: string;
+            /**
+             * @example month
+             * @enum {string}
+             */
+            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
+            /**
+             * @description When the current window started, or the start of the range you asked for.
              * @example 2026-11-01T00:00:00.000Z
              */
             windowStart: string;
         };
+        UsageOverview: {
+            limits: {
+                /**
+                 * @description How much each subject may use per window.
+                 * @example 200
+                 */
+                amount: number;
+                /** @description For a balance (window `total`): the credits added and taken back in the range, and the latest of them, newest first. Without a range, every credit counts. Null for other limits. */
+                credits: {
+                    /**
+                     * @description The credits added in the range.
+                     * @example 500
+                     */
+                    added: number;
+                    latest: {
+                        /** @example 500 */
+                        amount: number;
+                        /** @example 2026-11-03T01:07:05.959Z */
+                        createdAt: string;
+                        /** @example Credit pack */
+                        note: string;
+                        /**
+                         * @example {
+                         *       "kind": "user",
+                         *       "id": "usr_123"
+                         *     }
+                         */
+                        subject: {
+                            id: string;
+                            kind: string;
+                        };
+                    }[];
+                    /**
+                     * @description The credits taken back in the range.
+                     * @example 0
+                     */
+                    takenBack: number;
+                } | null;
+                /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
+                limitId: string;
+                /** @example AI budget */
+                limitName: string;
+                /**
+                 * @description When the current window ends, for a calendar window every subject shares. Null otherwise, and for a past range.
+                 * @example null
+                 */
+                resetsAt: string | null;
+                subjects: {
+                    /** @example 6 */
+                    refused: number;
+                    /**
+                     * @description What's left in the current window. Null for a past range.
+                     * @example null
+                     */
+                    remaining: number | null;
+                    /**
+                     * @example {
+                     *       "kind": "user",
+                     *       "id": "usr_123"
+                     *     }
+                     */
+                    subject: {
+                        id: string;
+                        kind: string;
+                    };
+                    /** @example 200 */
+                    used: number;
+                }[];
+                total: components["schemas"]["UsageTotal"];
+                /**
+                 * @description What the limit counts in, such as `cents` or `requests`.
+                 * @example cents
+                 */
+                unit: string;
+                /**
+                 * @example month
+                 * @enum {string}
+                 */
+                window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
+                /**
+                 * @description When the limit's current window started, or the start of the range.
+                 * @example 2026-10-01T00:00:00.000Z
+                 */
+                windowStart: string;
+            }[];
+            /**
+             * @description The past range the answer covers, or null for each limit's current window. Its start is the plan's history limit when you asked for earlier.
+             * @example {
+             *       "from": "2026-10-01T00:00:00.000Z",
+             *       "to": "2026-11-01T00:00:00.000Z"
+             *     }
+             */
+            range: {
+                /** @example 2026-10-01T00:00:00.000Z */
+                from: string;
+                /** @example 2026-11-01T00:00:00.000Z */
+                to: string;
+            } | null;
+        };
         UsageSeries: {
+            /**
+             * @description How much each subject may use per window.
+             * @example 200
+             */
+            amount: number;
+            /**
+             * @description The start of the range. It is the plan's history limit when you asked for earlier.
+             * @example 2026-10-01T00:00:00.000Z
+             */
+            from: string;
             /**
              * @example day
              * @enum {string}
@@ -1465,6 +1634,8 @@ export interface components {
             granularity: "hour" | "day";
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
+            /** @example AI budget */
+            limitName: string;
             points: {
                 /**
                  * @description The checks allowed in the bucket.
@@ -1487,6 +1658,22 @@ export interface components {
                  */
                 used: number;
             }[];
+            /**
+             * @description The end of the range.
+             * @example 2026-11-01T00:00:00.000Z
+             */
+            to: string;
+            total: components["schemas"]["UsageTotal"];
+            /**
+             * @description What the limit counts in, such as `cents` or `requests`.
+             * @example cents
+             */
+            unit: string;
+            /**
+             * @example month
+             * @enum {string}
+             */
+            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
         };
         UsageStanding: {
             /** @example live */
@@ -1544,6 +1731,23 @@ export interface components {
                 id: string;
                 kind: string;
             };
+        };
+        UsageTotal: {
+            /**
+             * @description The checks allowed in the range.
+             * @example 2396
+             */
+            allowed: number;
+            /**
+             * @description The checks refused in the range.
+             * @example 214
+             */
+            refused: number;
+            /**
+             * @description The units used in the range.
+             * @example 12480
+             */
+            used: number;
         };
         UserMe: {
             /** @example casey@example.com */
@@ -1948,6 +2152,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -1961,6 +2166,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Limit"];
+                };
+            };
+            /** @description The name matches more than one limit ignoring case (code: invalid_request). The message names each one: send the exact name or the ID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -2011,6 +2225,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -2096,6 +2311,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -2108,6 +2324,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The name matches more than one limit ignoring case (code: invalid_request). The message names each one: send the exact name or the ID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
             401: {
@@ -2166,6 +2391,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -2181,7 +2407,7 @@ export interface operations {
                     "application/json": components["schemas"]["CreditPage"];
                 };
             };
-            /** @description Malformed cursor or query (code: invalid_request). */
+            /** @description The name matches more than one limit ignoring case (code: invalid_request). The message names each one: send the exact name or the ID. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2238,6 +2464,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -2323,6 +2550,7 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
                 limitId: string;
             };
             cookie?: never;
@@ -2930,13 +3158,17 @@ export interface operations {
     };
     "usage.query": {
         parameters: {
-            query: {
+            query?: {
                 /** @description The start of the range, in ISO 8601. Default: 30 days before `to`. */
                 from?: string;
                 /** @description Whether each bucket is an `hour` or a `day`, in UTC. Default: day. */
                 granularity?: "hour" | "day";
-                /** @description The limit's ID. */
-                limitId: string;
+                /** @description The limit's ID. Send this or `limitName`. */
+                limitId?: string;
+                /** @description The limit's name, instead of its ID. It matches an active limit in this environment, exactly or else ignoring case. */
+                limitName?: string;
+                /** @description A named range instead of `from` and `to`, in UTC: `today`, `this_week` or `last_week` (weeks start on Monday), `this_month` or `last_month`. A current one ends now. */
+                period?: "today" | "this_week" | "last_week" | "this_month" | "last_month";
                 /** @description One subject, as `kind:id`, to see its usage instead of every subject's. */
                 subject?: string;
                 /** @description The end of the range, in ISO 8601. Default: now. */
@@ -2962,7 +3194,7 @@ export interface operations {
                     "application/json": components["schemas"]["UsageSeries"];
                 };
             };
-            /** @description The range is invalid (code: invalid_request). Either `from` isn't before `to`, or the range spans more than 2,000 buckets. */
+            /** @description The request is invalid (code: invalid_request). Either it names no limit, both an ID and a name, or a name that matches two limits ignoring case, or the range is invalid: `from` isn't before `to`, it spans more than 2,000 buckets, or it sends `period` with `from` or `to`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2991,6 +3223,78 @@ export interface operations {
             };
             /** @description This workspace has no such limit (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    "usage.overview": {
+        parameters: {
+            query?: {
+                /** @description The start of the range, in ISO 8601. */
+                from?: string;
+                /** @description A named range instead of `from` and `to`, in UTC: `today`, `this_week` or `last_week` (weeks start on Monday), `this_month` or `last_month`. A current one ends now. */
+                period?: "today" | "this_week" | "last_week" | "this_month" | "last_month";
+                /** @description `used` lists each limit's most used subjects first, and `refused` only its refused subjects, the most refused first. Default: used. */
+                sort?: "used" | "refused";
+                /** @description The end of the range, in ISO 8601. Default: now. */
+                to?: string;
+                /** @description How many subjects to list for each limit, up to 20. Default: 5. */
+                top?: number | null;
+            };
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every active limit's usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageOverview"];
+                };
+            };
+            /** @description The range is invalid (code: invalid_request). Either `from` isn't before `to`, or the request sends `period` with `from` or `to`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3086,11 +3390,21 @@ export interface operations {
     };
     "usage.subjects": {
         parameters: {
-            query: {
+            query?: {
+                /** @description The start of the range, in ISO 8601. */
+                from?: string;
                 /** @description How many subjects to list. Default: 50. The response holds at most 50, or 25 for a `concurrent` limit, even if you ask for more. */
                 limit?: number;
-                /** @description The limit's ID. */
-                limitId: string;
+                /** @description The limit's ID. Send this or `limitName`. */
+                limitId?: string;
+                /** @description The limit's name, instead of its ID. It matches an active limit in this environment, exactly or else ignoring case. */
+                limitName?: string;
+                /** @description A named range instead of `from` and `to`, in UTC: `today`, `this_week` or `last_week` (weeks start on Monday), `this_month` or `last_month`. A current one ends now. */
+                period?: "today" | "this_week" | "last_week" | "this_month" | "last_month";
+                /** @description `used` lists the most used first, and `refused` the most refused first. Default: used. */
+                sort?: "used" | "refused";
+                /** @description The end of the range, in ISO 8601. Default: now. */
+                to?: string;
             };
             header?: {
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
@@ -3110,6 +3424,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageBySubject"];
+                };
+            };
+            /** @description The request is invalid (code: invalid_request). Either it names no limit, both an ID and a name, or a name that matches two limits ignoring case, or the range is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
