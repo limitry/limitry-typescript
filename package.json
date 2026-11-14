@@ -1,7 +1,19 @@
 {
   "name": "@limitry/sdk",
-  "version": "1.0.0-rc.14",
+  "version": "1.0.0-rc.15",
   "description": "Limitry API client",
+  "keywords": [
+    "usage-limits",
+    "rate-limiting",
+    "credits",
+    "budgets",
+    "quotas",
+    "typescript",
+    "javascript",
+    "nodejs",
+    "sdk",
+    "api-client"
+  ],
   "type": "module",
   "exports": {
     ".": {

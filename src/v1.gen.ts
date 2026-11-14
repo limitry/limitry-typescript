@@ -105,7 +105,7 @@ export interface paths {
         put?: never;
         /**
          * Add credits to a balance
-         * @description Adds `amount` credits to one subject's balance, on a limit whose window is `total`. A negative `amount` takes credits back, such as after a refund or a chargeback, and needs a `note` saying why. The balance can go below zero, and Limitry then refuses checks until you add more credits. Owners, admins and workspace API keys can add credits. An agent asks a person instead, through the `limit.credit` approval. Limitry keeps a credit's `Idempotency-Key` forever, so never reuse one for a new credit.
+         * @description Adds `amount` credits to one subject's balance, on a limit whose window is `total`. A negative `amount` takes credits back, such as after a refund or a chargeback, and needs a `note` saying why. The balance can go below zero, and Limitry then refuses checks until you add more credits. Owners, admins and workspace API keys can add credits. An agent connected through MCP asks a person instead, through the `limit.credit` approval. Limitry keeps a credit's `Idempotency-Key` forever, so never reuse one for a new credit.
          */
         post: operations["limits.credits.create"];
         delete?: never;
@@ -287,7 +287,7 @@ export interface paths {
         };
         /**
          * Get every limit's usage at once
-         * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance also lists the credits added to it in the range. Usage older than your plan's history isn't returned.
+         * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance also lists the credits added to it in the range. The current window is whole on every plan. A past range reaches no further back than your plan's history.
          */
         get: operations["usage.overview"];
         put?: never;
@@ -327,7 +327,7 @@ export interface paths {
         };
         /**
          * List who is using a limit
-         * @description Lists a limit's subjects in its current window, most used first. Each one shows the units used, what's left and how many checks the limit refused. The amounts are exact, but a subject first checked in the last minute may not appear yet. For a `concurrent` limit, it lists the slots each subject holds now, among the subjects checked in the last hour. Name the limit by `limitId` or `limitName`. For a past range, send `period`, such as `last_month`, or `from` and `to`. The subjects are then ranked by their use in that range, from history. Each one's `remaining` is then null. Set `sort` to `refused` to list the most refused first. Usage older than your plan's history isn't returned.
+         * @description Lists a limit's subjects in its current window, most used first. Each one shows the units used, what's left and how many checks the limit refused. The amounts are exact, but a subject first checked in the last minute may not appear yet. For a `concurrent` limit, it lists the slots each subject holds now, among the subjects checked in the last hour. Name the limit by `limitId` or `limitName`. For a past range, send `period`, such as `last_month`, or `from` and `to`. The subjects are then ranked by their use in that range, from history. Each one's `remaining` is then null. Set `sort` to `refused` to list the most refused first. The current window is whole on every plan. A past range reaches no further back than your plan's history.
          */
         get: operations["usage.subjects"];
         put?: never;
@@ -587,7 +587,7 @@ export interface paths {
         };
         /**
          * Get your plan's usage this period
-         * @description Returns what the workspace used this period, with one entry for each thing its plan counts. Each entry has the plan's limit, or null when there is no limit. A period is one month from the workspace's billing date. That date comes from its subscription or, without one, from the day you created the workspace. On an annual plan, the counts still reset every month from the subscription's start.
+         * @description Returns what the workspace used this period, with one entry for each thing its plan counts. Each entry has the plan's limit, or null when there is no limit. Each entry also says where it stands and where we start refusing new use. A period is one month from the workspace's billing date. That date comes from its subscription or, without one, from the day you created the workspace. On an annual plan, the counts still reset every month from the subscription's start.
          */
         get: operations["workspace.usage"];
         put?: never;
@@ -859,7 +859,7 @@ export interface components {
                 limitId: string | null;
                 /**
                  * @description The refusal in one sentence, for people and logs. Show it, but never parse it, because its wording may change. Branch on `allowed` and `code` instead.
-                 * @example Refused by AI replies per day: 0 replies left, resets 2026-11-07T00:00:00.000Z. Try again in 3600 s.
+                 * @example Refused by AI budget: 3 cents left, resets 2026-12-01T00:00:00.000Z. Try again in 1123200 s.
                  */
                 message: string;
             } | null;
@@ -1285,7 +1285,7 @@ export interface components {
             /**
              * @description The names of the limits created.
              * @example [
-             *       "AI budget"
+             *       "Team credits"
              *     ]
              */
             created: string[];
@@ -1307,8 +1307,8 @@ export interface components {
                  * @description Each changed field, with its old and new value.
                  * @example {
                  *       "amount": {
-                 *         "from": 100,
-                 *         "to": 150
+                 *         "from": 200,
+                 *         "to": 300
                  *       }
                  *     }
                  */
@@ -1318,7 +1318,7 @@ export interface components {
                         to: string | number | boolean | null;
                     };
                 };
-                /** @example AI replies per day */
+                /** @example AI budget */
                 name: string;
             }[];
         };
@@ -1865,11 +1865,32 @@ export interface components {
                 /** @example webhook_deliveries */
                 id: string;
                 /**
-                 * @description The plan's limit for this period. Null means unlimited.
+                 * @description The count's name, as the app shows it.
+                 * @example Webhook deliveries
+                 */
+                label: string;
+                /**
+                 * @description The limit for this period. Null means unlimited. Zero means your plan includes none.
                  * @example 10000
                  */
                 limit: number | null;
-                /** @example 1240 */
+                /**
+                 * @description Where the count stands. `within` is under the limit. `grace` is past the limit, still running until `stopsAt`. `stopped` means we refuse new use until `periodEnd`. `over` is past the limit of a count we never refuse.
+                 * @example grace
+                 * @enum {string}
+                 */
+                state: "within" | "grace" | "stopped" | "over";
+                /**
+                 * @description Where we start refusing new use until the period resets. It equals `limit` when the count stops at its limit. It is higher when the count keeps running for a while past it. Null means we never refuse it.
+                 * @example 11000
+                 */
+                stopsAt: number | null;
+                /**
+                 * @description The unit of the limit, when the plan names one. Absent otherwise.
+                 * @example per month
+                 */
+                unit?: string;
+                /** @example 10400 */
                 used: number;
             }[];
             /**
@@ -1887,6 +1908,12 @@ export interface components {
              * @example 2026-10-17T14:30:00.000Z
              */
             periodStart: string;
+            /**
+             * @description Where the workspace stands, from its most limited count. The order from worst is `stopped`, `grace`, `over`, then `within`.
+             * @example grace
+             * @enum {string}
+             */
+            state: "within" | "grace" | "stopped" | "over";
         };
     };
     responses: never;
