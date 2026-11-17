@@ -2,6 +2,12 @@
 
 What changed in the Limitry TypeScript SDK (`@limitry/sdk`). Generated from the source on each release; newest first.
 
+## 1.0.0-rc.16 (2026-11-17)
+
+### Changed
+
+- The package page (README, on GitHub, npm and PyPI) opens with a short animation of a $2 AI budget refusing a call, linked to the 45-second demo.
+
 ## 1.0.0-rc.15 (2026-11-14)
 
 ### Added

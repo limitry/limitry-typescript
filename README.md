@@ -2,6 +2,10 @@
 
 The Limitry TypeScript SDK puts a limit around costly work in one call: `guard` checks before your code runs, and `reserve` reserves what the work will probably cost, then charges what it actually cost. Every API operation is a typed method too.
 
+[![A $2 AI budget for one of your users: three calls are charged, and the next is refused before the AI runs.](https://media.limitry.com/launch/readme-20261117-1555.gif)](https://limitry.com/#demo)
+
+[▶ Watch the 45-second demo](https://limitry.com/#demo)
+
 Limitry is the limits, credits and budgets layer for the software you build: give each of your users, teams, tenants, API keys or agents an allowance, and before any costly request one call tells your code whether it may happen.
 
 ## Install
