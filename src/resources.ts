@@ -64,7 +64,26 @@ export type RequestOptions = {
   idempotencyKey?: string;
   /** More request headers. */
   headers?: Record<string, string>;
+  /** Cancels the call, its retries included (an AbortSignal of yours). */
+  signal?: AbortSignal;
+  /**
+   * The most the call may take, in milliseconds, its retries and their
+   * waits included; past it the call throws a TimeoutError and is not
+   * retried. With the client's `timeout` too, the shorter one wins.
+   */
+  timeout?: number;
 };
+
+/** The signal for a call: the caller's, a timeout, both or neither. */
+export function callSignal(
+  signal: AbortSignal | undefined,
+  timeout: number | undefined,
+): AbortSignal | undefined {
+  const timer =
+    timeout === undefined ? undefined : AbortSignal.timeout(timeout);
+  if (signal && timer) return AbortSignal.any([signal, timer]);
+  return signal ?? timer;
+}
 
 /** One operation's request, as the generated method describes it. */
 export type Call = {
@@ -125,6 +144,7 @@ export async function call<T>(
         }
       : { headers }),
     ...(op.rawResponse ? { parseAs: "blob" } : {}),
+    signal: callSignal(options.signal, options.timeout),
   });
   if (error !== undefined || !response.ok) {
     throw apiErrorFrom(error, response);

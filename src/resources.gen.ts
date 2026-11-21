@@ -10,6 +10,9 @@ export function resources(client: RawClient) {
       create: /** Check whether a subject may act */
 (input: Input<"/checks", "post">, options?: RequestOptions) =>
   call<Output<"/checks", "post">>(client, {"method":"post","path":"/checks","query":[],"hasBody":true}, {  }, input, options),
+      recent: /** List recent checks */
+(input?: Input<"/checks/recent", "get">, options?: RequestOptions) =>
+  call<Output<"/checks/recent", "get">>(client, {"method":"get","path":"/checks/recent","query":["subject","refused","limit","cursor"],"hasBody":false}, {  }, input, options),
     },
     limits: {
       archive: /** Archive a limit */
@@ -54,12 +57,24 @@ export function resources(client: RawClient) {
   call<Output<"/reservations/{reservationId}/release", "post">>(client, {"method":"post","path":"/reservations/{reservationId}/release","query":[],"hasBody":false}, { "reservationId": reservationId }, undefined, options),
     },
     subjects: {
+      delete: /** Erase a subject's name and labels */
+(subjectKind: string | number, subjectId: string | number, options?: RequestOptions) =>
+  call<Output<"/subjects/{subjectKind}/{subjectId}", "delete">>(client, {"method":"delete","path":"/subjects/{subjectKind}/{subjectId}","query":[],"hasBody":false}, { "subjectKind": subjectKind, "subjectId": subjectId }, undefined, options),
       get: /** Get a subject */
 (subjectKind: string | number, subjectId: string | number, options?: RequestOptions) =>
   call<Output<"/subjects/{subjectKind}/{subjectId}", "get">>(client, {"method":"get","path":"/subjects/{subjectKind}/{subjectId}","query":[],"hasBody":false}, { "subjectKind": subjectKind, "subjectId": subjectId }, undefined, options),
+      import: /** Name many subjects */
+(input: Input<"/subjects/import", "post">, options?: RequestOptions) =>
+  call<Output<"/subjects/import", "post">>(client, {"method":"post","path":"/subjects/import","query":[],"hasBody":true}, {  }, input, options),
+      list: /** List subjects */
+(input?: Input<"/subjects", "get">, options?: RequestOptions) =>
+  call<Output<"/subjects", "get">>(client, {"method":"get","path":"/subjects","query":["kind","label","q","limit","cursor"],"hasBody":false}, {  }, input, options),
       reset: /** Reset a subject's limits */
 (subjectKind: string | number, subjectId: string | number, input?: Input<"/subjects/{subjectKind}/{subjectId}/reset", "post">, options?: RequestOptions) =>
   call<Output<"/subjects/{subjectKind}/{subjectId}/reset", "post">>(client, {"method":"post","path":"/subjects/{subjectKind}/{subjectId}/reset","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),
+      set: /** Name a subject */
+(subjectKind: string | number, subjectId: string | number, input?: Input<"/subjects/{subjectKind}/{subjectId}/names", "put">, options?: RequestOptions) =>
+  call<Output<"/subjects/{subjectKind}/{subjectId}/names", "put">>(client, {"method":"put","path":"/subjects/{subjectKind}/{subjectId}/names","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),
       update: /** Set a subject's billing date */
 (subjectKind: string | number, subjectId: string | number, input: Input<"/subjects/{subjectKind}/{subjectId}", "patch">, options?: RequestOptions) =>
   call<Output<"/subjects/{subjectKind}/{subjectId}", "patch">>(client, {"method":"patch","path":"/subjects/{subjectKind}/{subjectId}","query":[],"hasBody":true}, { "subjectKind": subjectKind, "subjectId": subjectId }, input, options),

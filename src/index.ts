@@ -2,6 +2,7 @@ import { brand } from "./brand.ts";
 import createOpenApiClient from "openapi-fetch";
 
 import { apiErrorFrom } from "./errors.ts";
+import { callSignal } from "./resources.ts";
 import * as product from "./product/index.ts";
 import { resources } from "./resources.gen.ts";
 import { withoutProductRetryHeader, withRetries } from "./retry.ts";
@@ -38,7 +39,8 @@ import type { components, paths } from "./v1.gen.ts";
  * Every write sends an Idempotency-Key (yours, from `{ idempotencyKey }`,
  * else one per call) and a failed attempt — network error, 5xx, 429 —
  * is retried with the same key, twice by default (./retry.ts), so a
- * retried write runs once.
+ * retried write runs once. A `timeout` (the client's, or a call's) or a
+ * call's `signal` bounds the whole call, retries and waits included.
  */
 export type { components, paths };
 export type Schemas = components["schemas"];
@@ -86,6 +88,13 @@ export type ClientOptions = {
    * Default 2; 0 turns them off.
    */
   maxRetries?: number;
+  /**
+   * The most any call may take, in milliseconds, its retries and their
+   * waits included; past it the call throws a TimeoutError. Default:
+   * none. A call's own `timeout` or `signal` applies as well, and the
+   * first to end the call wins.
+   */
+  timeout?: number;
 };
 
 /** The client before a product's own methods: raw calls plus the generated ones. */
@@ -132,12 +141,23 @@ function createBaseClient(options: ClientOptions) {
   }
   const origin = withoutTrailingSlashes(options.api ?? DEFAULT_API);
   const send = options.fetch ?? ((request: Request) => fetch(request));
+  const sending =
+    options.maxRetries === 0
+      ? withoutProductRetryHeader(send)
+      : withRetries(send, { maxRetries: options.maxRetries });
+  // The client's timeout bounds the whole call, so it wraps the retries.
+  const timeout = options.timeout;
   const client = createOpenApiClient<paths>({
     baseUrl: `${origin}/v1`,
     fetch:
-      options.maxRetries === 0
-        ? withoutProductRetryHeader(send)
-        : withRetries(send, { maxRetries: options.maxRetries }),
+      timeout === undefined
+        ? sending
+        : (request) =>
+            sending(
+              new Request(request, {
+                signal: callSignal(request.signal, timeout),
+              }),
+            ),
   });
   client.use({
     onRequest({ request }) {

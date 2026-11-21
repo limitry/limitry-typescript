@@ -3,18 +3,25 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | undefined;
+  /**
+   * The response's headers (Retry-After, Server-Timing, the rate-limit
+   * ones): empty when the error was not built from a response.
+   */
+  readonly headers: Headers;
 
   constructor(
     status: number,
     code: string,
     message: string,
     requestId?: string,
+    headers?: Headers,
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.headers = headers ?? new Headers();
   }
 }
 
@@ -30,5 +37,6 @@ export function apiErrorFrom(error: unknown, response: Response): ApiError {
     envelope.error?.code ?? "http_error",
     envelope.error?.message ?? `HTTP ${response.status}`,
     envelope.error?.requestId,
+    response.headers,
   );
 }

@@ -42,6 +42,20 @@ const post = (init: RequestInit = {}) =>
   });
 
 describe("withRetries", () => {
+  it("stops waiting between attempts the moment the call's signal aborts", async () => {
+    const { fetch, sent } = scripted([json(503, {}), json(201, {})]);
+    const controller = new AbortController();
+    const sleep = (ms: number) => {
+      controller.abort(new DOMException("deadline", "TimeoutError"));
+      return new Promise<void>((done) => setTimeout(done, ms));
+    };
+    const failure = await withRetries(fetch, { sleep })(
+      post({ signal: controller.signal }),
+    ).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ name: "TimeoutError" });
+    expect(sent).toHaveLength(1);
+  });
+
   it("retries a write with the SAME key, sending the body each time", async () => {
     const { fetch, sent } = scripted([
       json(503, {}),
