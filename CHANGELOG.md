@@ -2,6 +2,10 @@
 
 What changed in the Limitry TypeScript SDK (`@limitry/sdk`). Generated from the source on each release; newest first.
 
+## 1.0.0-rc.19 (2026-11-22)
+
+No user-facing changes.
+
 ## 1.0.0-rc.18 (2026-11-22)
 
 ### Added

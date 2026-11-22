@@ -114,11 +114,14 @@ describe("errors", () => {
       timeout: 5,
       fetch: (request) => {
         attempts++;
-        return new Promise((_, fail) =>
+        return new Promise<Response>((_, fail) => {
+          // Already aborted (a short timeout can fire before this runs):
+          // fail now, or the attempt waits for an abort that has passed.
+          if (request.signal.aborted) return fail(request.signal.reason);
           request.signal.addEventListener("abort", () =>
             fail(request.signal.reason),
-          ),
-        );
+          );
+        });
       },
     });
     const error = await client.workspace.get().catch((e: unknown) => e);

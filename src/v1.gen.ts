@@ -867,7 +867,7 @@ export interface components {
             inputSchema: {
                 [key: string]: unknown;
             };
-            /** @example Create an API key */
+            /** @example Create a workspace API key */
             title: string;
         };
         ApprovalActionPage: {
@@ -952,7 +952,7 @@ export interface components {
              * @example Create the API key “acme-web” with workspace:read
              */
             summary: string;
-            /** @example Create an API key */
+            /** @example Create a workspace API key */
             title: string;
         };
         AuditEvent: {
