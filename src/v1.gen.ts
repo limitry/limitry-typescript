@@ -9,33 +9,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List checks
+         * @description Lists the checks of the last 3 days, newest first, with every subject each one named and whether Limitry allowed it. A refused check says whose budget refused it. Name a `subject` as `kind:id` for only the checks that named it, or set `refused` for only refused ones. Send `before` to start from a moment. Limitry keeps the last 3 days, and at most 100,000 checks in each environment. Results come a page at a time.
+         */
+        get: operations["checks.list"];
         put?: never;
         /**
          * Check whether a subject may act
          * @description Asks whether `subject` may do `action` at `cost`, given every enabled limit that applies. In `consume` mode, it also counts the use. Every decision returns 200, whether it's allowed or refused, so read `allowed`. `limits` shows what's left on each limit, and `retryAfterSeconds` says when to try again. With an `Idempotency-Key` header, a retried check gets the same decision for an hour and counts only once. We cache its API key check briefly for speed. A revoked key can keep working here for up to 60 seconds.
          */
         post: operations["checks.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/checks/recent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List recent checks
-         * @description Lists the checks of the last 3 days, newest first, with every subject each one named and whether Limitry allowed it. A refused check says whose budget refused it. Name a `subject` as `kind:id` for only the checks that named it, or set `refused` for only refused ones. Limitry keeps the last 3 days, and at most 100,000 checks in each environment. Results come a page at a time.
-         */
-        get: operations["checks.recent"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -134,6 +118,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/limits/{limitId}/credits/{creditId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a credit
+         * @description Returns one credit added to a subject's balance on this limit.
+         */
+        get: operations["limits.credits.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/limits/{limitId}/restore": {
         parameters: {
             query?: never;
@@ -165,9 +169,29 @@ export interface paths {
         put?: never;
         /**
          * Sync limits from a list
-         * @description Makes the environment's limits match the list in `limits`, pairing them up by name. It creates the limits that are missing and changes the ones that differ, where an omitted field means its default. With `archiveMissing`, it also archives the active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list before writing anything. If any entry has a problem, nothing changes, and the 400 lists each problem in `details`. Otherwise Limitry writes every change at once. You can't change a limit's subject, action, unit, window, every, start or rolling under the same name, so rename the entry to do that. With `preview`, it returns what it would do without writing anything. What a sync sets is locked in the app until the next sync, which names its `source`. This is the call behind `limitry sync`, for keeping your limits in a file in your repository. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Makes the environment's limits match the list in `limits`, pairing them up by name. It creates the limits that are missing and changes the ones that differ, where an omitted field means its default. With `archiveMissing`, it also archives the active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list before writing anything. If any entry has a problem, nothing changes, and the 400 lists each problem in `details`. Otherwise Limitry writes every change at once. You can't change a limit's subject, action, unit, window, every, start or rolling under the same name, so rename the entry to do that. With `dryRun`, it returns what it would do without writing anything. What a sync sets is locked in the app until the next sync, which names its `source`. This is the call behind `limitry sync`, for keeping your limits in a file in your repository. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
          */
         post: operations["limits.sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reservations/{reservationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a reservation
+         * @description Returns a reservation as it stands: held, committed, released or expired, with what it reserved and what it finally used. A reservation past its expiry that nobody committed or released reads as expired. Reading it changes nothing.
+         */
+        get: operations["reservations.get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -185,7 +209,7 @@ export interface paths {
         put?: never;
         /**
          * Commit a reservation
-         * @description Commits a reservation with the amount actually used (`cost`). If `cost` is less than the amount reserved, the rest goes back at once. If it's more, Limitry charges the whole `cost`, since the work happened. A commit up to 24 hours after the reservation expired still charges `cost`. Repeating a commit with the same `cost` returns the same result, and a different `cost` gets a 400. We cache its API key check briefly for speed. A revoked key can keep working here for up to 60 seconds.
+         * @description Commits a reservation with the amount actually used (`cost`). If `cost` is less than the amount reserved, the rest goes back at once. If it's more, Limitry charges the whole `cost`, since the work happened. A commit up to 24 hours after the reservation expired still charges `cost`. Repeating a commit with the same `cost` returns the same result, and a different `cost` gets a 400. Committing a released reservation gets a 409. We cache its API key check briefly for speed. A revoked key can keep working here for up to 60 seconds.
          */
         post: operations["reservations.commit"];
         delete?: never;
@@ -268,16 +292,12 @@ export interface paths {
         get: operations["subjects.get"];
         put?: never;
         post?: never;
-        /**
-         * Erase a subject's name and labels
-         * @description Erases the name and labels you gave a subject. Its limits, usage and billing date stay, because they're kept by its ID. Use it when one of your users asks you to delete their data. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
-         */
-        delete: operations["subjects.delete"];
+        delete?: never;
         options?: never;
         head?: never;
         /**
-         * Set a subject's billing date
-         * @description Sets the date a subject's `billing_date` limits count their periods from. Usually this is the subscription's start date, set from your billing system's webhook. The subject's allowance then resets on its own billing day, and a monthly limit still resets monthly on an annual plan. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * Update a subject
+         * @description Sets a subject's billing date, its name, its labels, or any of them. A field you leave out stays as it is, and null clears a name or labels. Labels you send replace the subject's labels. The billing date is the moment the subject's `billing_date` limits count their periods from, usually the subscription's start, set from your billing system's webhook. The subject's allowance then resets on its own billing day, and a monthly limit still resets monthly on an annual plan. A name and labels are optional, and checks never need them. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
          */
         patch: operations["subjects.update"];
         trace?: never;
@@ -290,13 +310,13 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /**
-         * Name a subject
-         * @description Sets a subject's name, its labels, or both. Both are optional, and checks never need them. A field you leave out stays as it is, and null clears it. Labels you send replace the subject's labels. `DELETE /v1/subjects/{subjectKind}/{subjectId}` erases them. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
-         */
-        put: operations["subjects.set"];
+        put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Erase a subject's name and labels
+         * @description Erases the name and labels you gave a subject. Its limits, usage and billing date stay, because they're kept by its ID. Use it when one of your users asks you to delete their data. Erasing a subject with no name or labels succeeds too. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         */
+        delete: operations["subjects.names.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -316,6 +336,26 @@ export interface paths {
          * @description Resets one limit on a subject now, or every limit on it. Send `limitId` for one limit, or `{}` for all of them. Use it for goodwill, a promotion or support. The schedule doesn't move, so the next reset still happens when it normally would. A balance goes back to its amount, and the reset skips concurrent limits. With an Idempotency-Key, a repeated request resets only once. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
          */
         post: operations["subjects.reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subjects/{subjectKind}/{subjectId}/standing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get where a subject stands
+         * @description Returns where one subject stands on every enabled limit, exact as of now. It covers the subject's own limits and the limits on its shared subjects. List the shared subjects in `shared`, such as `team:team_42`. Each limit shows what's used, what's left and when it resets. Use it to show your users where they stand. Call it from your server with your key, never from a browser. It isn't a check, so it counts nothing. A subject with no limits returns an empty `limits` list.
+         */
+        get: operations["subjects.standing"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -374,26 +414,6 @@ export interface paths {
          * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance also lists the credits added to it in the range. The current window is whole on every plan. A past range reaches no further back than your plan's history.
          */
         get: operations["usage.overview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/usage/standing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get where a subject stands
-         * @description Returns where one subject stands on every enabled limit, exact as of now. It covers the subject's own limits and the limits on its shared subjects. Name the subject as `kind:id`, such as `user:usr_123`, and list its shared subjects in `shared`, such as `team:team_42`. Each limit shows what's used, what's left and when it resets. Use it to show your users where they stand. Call it from your server with your key, never from a browser. It isn't a check, so it counts nothing. A subject with no limits returns an empty `limits` list.
-         */
-        get: operations["usage.standing"];
         put?: never;
         post?: never;
         delete?: never;
@@ -491,7 +511,7 @@ export interface paths {
         };
         /**
          * List the actions you can ask approval for
-         * @description Lists the actions a credential can't take itself but can ask a person to approve. Each action comes with its input as a JSON Schema, who can approve it and whether it creates a secret.
+         * @description Lists the actions a credential can't take itself but can ask a person to approve. Each action comes with its input as a JSON Schema (`inputSchema`), who can approve it and whether it creates a secret. Every action fits on one page, so `nextCursor` is null.
          */
         get: operations["workspace.approvalActions.list"];
         put?: never;
@@ -522,7 +542,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/workspace/approval-requests/{requestId}": {
+    "/workspace/approval-requests/{approvalRequestId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -542,7 +562,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/workspace/approval-requests/{requestId}/redeem": {
+    "/workspace/approval-requests/{approvalRequestId}/redeem": {
         parameters: {
             query?: never;
             header?: never;
@@ -591,7 +611,7 @@ export interface paths {
         };
         /**
          * List event types
-         * @description Lists every workspace event a webhook endpoint can subscribe to, and what each one means. Pass some as `eventTypes` when you add an endpoint. An endpoint without a list receives every event.
+         * @description Lists every workspace event a webhook endpoint can subscribe to, and what each one means. Pass some as `eventTypes` when you add an endpoint. An endpoint without a list receives every event. Every type fits on one page, so `nextCursor` is null.
          */
         get: operations["workspace.eventTypes.list"];
         put?: never;
@@ -642,6 +662,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspace/plan-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your plan's usage this period
+         * @description Returns what the workspace used this period, with one entry for each thing its plan counts. Each entry has the plan's limit, or null when there is no limit. Each entry also says where it stands and where we start refusing new use. A period is one month from the workspace's billing date. That date comes from its subscription or, without one, from the day you created the workspace. On an annual plan, the counts still reset every month from the subscription's start.
+         */
+        get: operations["workspace.planUsage.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspace/teams": {
         parameters: {
             query?: never;
@@ -654,26 +694,6 @@ export interface paths {
          * @description Lists the workspace's teams and their members' user ids, newest first. Paginate with the opaque `nextCursor`. `limit` takes 1 to 100 and defaults to 25. Create teams and add members to them in the app.
          */
         get: operations["workspace.teams.list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workspace/usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get your plan's usage this period
-         * @description Returns what the workspace used this period, with one entry for each thing its plan counts. Each entry has the plan's limit, or null when there is no limit. Each entry also says where it stands and where we start refusing new use. A period is one month from the workspace's billing date. That date comes from its subscription or, without one, from the day you created the workspace. On an annual plan, the counts still reset every month from the subscription's start.
-         */
-        get: operations["workspace.usage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -697,7 +717,7 @@ export interface paths {
         put?: never;
         /**
          * Add a webhook endpoint
-         * @description Registers an HTTPS URL to receive the workspace's events. Deliveries use the same signature format as Svix. The response includes the endpoint's signing secret (`whsec_…`). You see it only once, so store it to verify deliveries. The API refuses private hosts and hosts without HTTPS. A workspace can have at most 10 endpoints. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
+         * @description Registers an HTTPS URL to receive the workspace's events. Deliveries use the same signature format as Svix. The response is the new endpoint with its signing secret (`whsec_…`) in `secret`. You see it only once, so store it to verify deliveries. The API refuses private hosts and hosts without HTTPS. A workspace can have at most 10 endpoints. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookEndpoints.create"];
         delete?: never;
@@ -743,7 +763,7 @@ export interface paths {
         };
         /**
          * List an endpoint's deliveries
-         * @description Lists one endpoint's delivery history, newest first. Each entry shows the event's status, attempts and last HTTP status. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. `before` starts from a moment, and `status` keeps one kind of delivery. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
+         * @description Lists one endpoint's delivery history, newest first. Each entry shows the delivery's state, its attempts and the last HTTP status code. Payloads aren't included. We keep the history for 30 days. Paginate with the opaque `nextCursor`. `before` starts from a moment, and `status` keeps one kind of delivery. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
          */
         get: operations["workspace.webhookDeliveries.list"];
         put?: never;
@@ -765,7 +785,7 @@ export interface paths {
         put?: never;
         /**
          * Redeliver an event
-         * @description Sends a recorded delivery's event again, as a new delivery. The new delivery gets its own history entry. The event id stays the same, so receivers can deduplicate. Redelivery only works on an enabled endpoint. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
+         * @description Sends a recorded delivery's event again, as a new delivery. The new delivery gets its own history entry. The event id stays the same, so receivers can deduplicate. Redelivery only works on an enabled endpoint. It answers 200 when we attempted the delivery right away, with the endpoint's answer, and 202 when it went to the queue. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookDeliveries.redeliver"];
         delete?: never;
@@ -805,7 +825,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test event
-         * @description Sends a `ping` event to the endpoint, signed like every delivery. Use it to check that an integration verifies and accepts deliveries. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
+         * @description Sends a `ping` event to the endpoint, signed like every delivery. Use it to check that an integration verifies and accepts deliveries. It answers 200 when we attempted the delivery right away, with the endpoint's answer, and 202 when it went to the queue. With a personal access token, the workspace's owners and admins can call this, and members on the test side. A workspace API key with this scope can.
          */
         post: operations["workspace.webhookEndpoints.test"];
         delete?: never;
@@ -818,21 +838,75 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ApprovalAction: {
+            /**
+             * @description The workspace roles that can approve the action.
+             * @example [
+             *       "owner"
+             *     ]
+             */
+            approverRoles: ("owner" | "admin" | "member" | "guest")[];
+            /** @example true */
+            createsSecret: boolean;
+            /** @example workspace.apiKey.create */
+            id: string;
+            /**
+             * @description The JSON Schema the request's `input` must match.
+             * @example {
+             *       "type": "object",
+             *       "properties": {
+             *         "name": {
+             *           "type": "string"
+             *         }
+             *       },
+             *       "required": [
+             *         "name"
+             *       ]
+             *     }
+             */
+            inputSchema: {
+                [key: string]: unknown;
+            };
+            /** @example Create an API key */
+            title: string;
+        };
+        ApprovalActionPage: {
+            items: components["schemas"]["ApprovalAction"][];
+            /** @description Always null: every action fits on one page. */
+            nextCursor: null;
+        };
+        ApprovalRedemption: {
+            /** @example LIMITRY_API_KEY */
+            envVar: string | null;
+            request: components["schemas"]["ApprovalRequest"];
+            /** @example sk_limitry_Xk2mP9qR4tV7wY1zB3cD5fG8hJ0kL6nQXk2mP9qR4tV7wY1zB3cD5fG8hJ0kL6nQ */
+            secret: string | null;
+        };
         ApprovalRequest: {
             /** @example workspace.apiKey.create */
             action: string;
             /**
              * @description The page where a person approves or denies the request. Show it to them.
-             * @example https://app.limitry.com/approvals/apr_7c2e…
+             * @example https://app.limitry.com/approvals/apr_7c2e9b4d-1f3a-4e5b-8c6d-7e8f9a0b1c2d
              */
             approveUrl: string;
-            /** @example 2026-08-19T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             createdAt: string;
-            /** @example null */
+            /**
+             * Format: date-time
+             * @description When a person approved or denied it. Null until then.
+             * @example null
+             */
             decidedAt: string | null;
-            /** @example 2026-08-20T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-20T12:00:00.000Z
+             */
             expiresAt: string;
-            /** @example apr_7c2e… */
+            /** @example apr_7c2e9b4d-1f3a-4e5b-8c6d-7e8f9a0b1c2d */
             id: string;
             /**
              * @example {
@@ -882,28 +956,35 @@ export interface components {
             title: string;
         };
         AuditEvent: {
-            /** @example workspace.member_invited */
+            /**
+             * @description What happened, as `<resource>.<past-tense verb>`, the grammar of webhook event types. The Audit page in the app lists them.
+             * @example workspace.member.invited
+             */
             action: string;
             /** @description Who acted. */
             actor: {
                 /**
                  * @description The person who acted, for a `user` actor. Null for anyone else. Pass `user:` and this id as `actor` to see only what they did.
-                 * @example usr_k3TAiF2ZP5sQ
+                 * @example usr_4f8a2c1e-7b3d-4e9f-a6c5-2d1b0e9f8a7c
                  */
                 id: string | null;
             };
             /**
              * @description Who is accountable: `user`, `staff`, `system` or `api_key`.
              * @example user
+             * @enum {string}
              */
-            actorType: string;
-            /** @example 2026-08-19T12:00:00.000Z */
+            actorType: "user" | "staff" | "system" | "api_key";
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             createdAt: string;
             /** @description The API credential the action came through, with the name it had at the time. Null for actions taken in the app. */
             credential: {
                 /**
                  * @description The key or token. Pass `credential:` and this id as `actor` to see only what it did.
-                 * @example key_8a1bQ2
+                 * @example pat_8a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b
                  */
                 id: string | null;
                 /** @example ci */
@@ -911,10 +992,11 @@ export interface components {
                 /**
                  * @description `api_key` or `pat`.
                  * @example pat
+                 * @enum {string}
                  */
-                type: string;
+                type: "api_key" | "pat";
             } | null;
-            /** @example evt_k3TAiF2ZP5sQxWbV */
+            /** @example aud_6b2f9e1c-3d4a-4f8b-9e7c-1a2b3c4d5e6f */
             id: string;
         };
         AuditEventPage: {
@@ -922,14 +1004,38 @@ export interface components {
             /** @description Pass as ?cursor= to fetch the next page. */
             nextCursor: string | null;
         };
+        Check: {
+            /** @example ai-call */
+            action: string;
+            /** @example false */
+            allowed: boolean;
+            /**
+             * Format: date-time
+             * @example 2026-11-21T14:32:08.000Z
+             */
+            checkedAt: string;
+            /** @example 5 */
+            cost: number;
+            /**
+             * @example consume
+             * @enum {string}
+             */
+            mode: "consume" | "preview" | "reserve";
+            refusedBy: components["schemas"]["CheckRefusal"];
+            /** @description Every subject the check named, its own first. */
+            subjects: components["schemas"]["NamedSubjectRef"][];
+            /**
+             * @description The unit of `cost`, when every limit the check met counts one. It's null when they differ.
+             * @example cents
+             */
+            unit: string | null;
+        };
         CheckDecision: {
             /**
              * @description Whether the action may go ahead. `false` is a normal response, not an error, so branch on it.
              * @example true
              */
             allowed: boolean;
-            /** @example chk_2b8f5d1e-7a3c-4f9e-b6d0-1c4e8a7f3b92 */
-            id: string;
             /** @description Every limit that applied, with what's left on each. */
             limits: components["schemas"]["CheckLimit"][];
             /**
@@ -942,25 +1048,33 @@ export interface components {
                 /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
                 limitId: string | null;
                 /**
+                 * @description The name of the limit that refused. It's null for `too_many_reservations`.
+                 * @example AI budget
+                 */
+                limitName: string | null;
+                /**
                  * @description The refusal in one sentence, for people and logs. Show it, but never parse it, because its wording may change. Branch on `allowed` and `code` instead.
-                 * @example Refused by AI budget for user usr_123: 3 cents left, resets 2026-12-01T00:00:00.000Z. Try again in 1123200 s.
+                 * @example Refused by AI budget for user user_123: 3 cents left, resets 2026-12-01T00:00:00.000Z. Try again in 1123200 s.
                  */
                 message: string;
                 /** @description Whose limit refused the check. It's the check's own subject, or one of its `shared` subjects when that subject's limit refused it, such as a team's budget. */
-                subject?: {
-                    /** @example usr_123 */
+                subject: {
+                    /** @example user_123 */
                     id: string;
                     /** @example user */
                     kind: string;
-                };
+                } | null;
             } | null;
-            /** @description The reservation, when `mode` is `reserve` and Limitry allows the check. Commit or release it before `expiresAt`, or it releases itself. */
-            reservation?: {
-                /** @example 2026-11-06T12:05:00.000Z */
+            /** @description The reservation, when `mode` is `reserve` and Limitry allows the check. Commit or release it before `expiresAt`, or it releases itself. It's null otherwise. */
+            reservation: {
+                /**
+                 * Format: date-time
+                 * @example 2026-11-06T12:05:00.000Z
+                 */
                 expiresAt: string;
                 /** @example rsv_WyJ1c2VyIiwidXNyXzEyMyJd_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
                 id: string;
-            };
+            } | null;
             /**
              * @description When `allowed` is false, the seconds until the same check could succeed. It's null when waiting won't help. Only credits refill a used-up balance.
              * @example null
@@ -982,13 +1096,14 @@ export interface components {
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
             /** @example AI budget */
-            name: string;
+            limitName: string;
             /**
              * @description What's left in the current window.
              * @example 195
              */
             remaining: number;
             /**
+             * Format: date-time
              * @description When the window resets. For a rolling limit, it's when the oldest use leaves the window. It's null when nothing will reset: a balance (`total`), a `concurrent` limit, or a rolling limit with nothing in use.
              * @example 2026-12-01T00:00:00.000Z
              */
@@ -1006,6 +1121,22 @@ export interface components {
              */
             window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
         };
+        CheckList: {
+            items: components["schemas"]["Check"][];
+            /**
+             * @description The next page's cursor. It's null on the last page.
+             * @example null
+             */
+            nextCursor: string | null;
+        };
+        /** @description Whose limit refused the check, and which. It's null when Limitry allowed the check. */
+        CheckRefusal: {
+            /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
+            limitId: string | null;
+            /** @example Team AI budget */
+            limitName: string | null;
+            subject: components["schemas"]["NamedSubjectRef"];
+        } | null;
         CheckRequest: {
             /**
              * @description What the subject wants to do.
@@ -1031,11 +1162,11 @@ export interface components {
             /** @description With `reserve`, how many seconds the reservation lasts before it releases itself. Default: 300. At most 3600. */
             ttlSeconds?: number;
         };
-        /** @description Who is acting, such as `{"kind": "user", "id": "usr_123"}`. */
+        /** @description Who is acting, such as `{"kind": "user", "id": "user_123"}`. */
         CheckSubject: {
             /**
              * @description The subject's ID in your product.
-             * @example usr_123
+             * @example user_123
              */
             id: string;
             /**
@@ -1050,29 +1181,26 @@ export interface components {
              * @example 5000
              */
             amount: number;
-            /** @example 2026-10-01T09:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-10-01T09:00:00.000Z
+             */
             createdAt: string;
             /**
              * @description The person who added the credits, or null when a workspace API key did.
-             * @example Vb2KqW8nRx4LmT6pYc9HsJ3dFg7Na1Ue
+             * @example usr_9b1d4e7a-2c5f-4a8b-b3e6-7f0d1c2a5e94
              */
             createdByUserId: string | null;
             /** @example crd_5a8d3f2b-9c1e-4b7a-8f6d-2e0c9b4a1d73 */
             id: string;
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
-            /** @example October credits */
-            note: string;
             /**
-             * @example {
-             *       "kind": "team",
-             *       "id": "team_42"
-             *     }
+             * @description The note you added, or null for none.
+             * @example October credits
              */
-            subject: {
-                id: string;
-                kind: string;
-            };
+            note: string | null;
+            subject: components["schemas"]["SubjectRef"];
         };
         CreditInput: {
             /**
@@ -1120,21 +1248,42 @@ export interface components {
                 requestId?: string;
             };
         };
+        EventType: {
+            /** @example A person joined the workspace, by accepting an invitation or being added. `data.userId` says who. */
+            description: string;
+            /** @example workspace.member.joined */
+            type: string;
+        };
+        EventTypePage: {
+            items: components["schemas"]["EventType"][];
+            /** @description Always null: every event type fits on one page. */
+            nextCursor: null;
+        };
         Invitation: {
-            /** @example 2026-08-19T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             createdAt: string;
             /** @example sam@example.com */
             email: string;
-            /** @example 2026-08-21T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-21T12:00:00.000Z
+             */
             expiresAt: string;
-            /** @example c1d9e0a4-2b7f-4e3a-9f6d-8a5b4c3e2f10 */
+            /** @example inv_c1d9e0a4-2b7f-4e3a-9f6d-8a5b4c3e2f10 */
             id: string;
-            /** @example member */
-            role: string | null;
+            /**
+             * @description The role the person gets on accepting.
+             * @example member
+             * @enum {string|null}
+             */
+            role: "owner" | "admin" | "member" | "guest" | null;
             /**
              * @description The teams the person joins on accepting. Everyone except a guest also joins the default team.
              * @example [
-             *       "5cfbfbdc-bd74-4b1b-aacf-cc18a0ab960e"
+             *       "team_5cfbfbdc-bd74-4b1b-aacf-cc18a0ab960e"
              *     ]
              */
             teamIds: string[];
@@ -1156,11 +1305,15 @@ export interface components {
              */
             amount: number;
             /**
+             * Format: date-time
              * @description When you archived the limit, or null while it's active. Checks don't enforce an archived limit, but Limitry keeps its usage history and credits.
              * @example null
              */
             archivedAt: string | null;
-            /** @example 2026-10-04T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-10-04T12:00:00.000Z
+             */
             createdAt: string;
             /**
              * @description Whether checks enforce the limit.
@@ -1181,6 +1334,7 @@ export interface components {
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             id: string;
             /**
+             * Format: date-time
              * @description The hour a check last reached this limit, or null if none has. It comes from usage history, so it can be up to about a minute behind. If no check reaches a limit, it isn't limiting anything, so compare its subject kind and action with what your checks send.
              * @example 2026-11-06T12:00:00.000Z
              */
@@ -1192,8 +1346,6 @@ export interface components {
              * @example null
              */
             override: {
-                /** @example 2026-11-21T14:00:00.000Z */
-                at: string;
                 /** @description The values the file sets, which the next sync puts back. */
                 file: {
                     /** @example 200 */
@@ -1206,6 +1358,11 @@ export interface components {
                      */
                     failMode: "open" | "closed";
                 };
+                /**
+                 * Format: date-time
+                 * @example 2026-11-21T14:00:00.000Z
+                 */
+                overriddenAt: string;
                 /** @example Support incident: raised for a customer */
                 reason: string;
             } | null;
@@ -1228,7 +1385,10 @@ export interface components {
             subject: components["schemas"]["LimitSubject"];
             /** @example cents */
             unit: string;
-            /** @example 2026-10-04T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-10-04T12:00:00.000Z
+             */
             updatedAt: string;
             /**
              * @description The kind of period. `minute`, `hour`, `day`, `week`, `month` and `year` count a period of `every` windows, which resets where `start` says, or rolls when `rolling` is true. `total` is a balance that never resets, and credits raise it. `concurrent` allows at most `amount` open reservations at once.
@@ -1286,7 +1446,7 @@ export interface components {
              */
             window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
         };
-        /** @description Who the limit applies to. `{"kind": "user"}` covers every user, and `{"kind": "user", "id": "usr_123"}` covers one. */
+        /** @description Who the limit applies to. `{"kind": "user"}` covers every user, and `{"kind": "user", "id": "user_123"}` covers one. */
         LimitInputSubject: {
             /** @description One subject's ID. Leave it out, or send null, to cover every subject of the kind. A limit for one subject replaces the kind's limits that have the same action and window. */
             id?: string | null;
@@ -1378,6 +1538,8 @@ export interface components {
         LimitSyncInput: {
             /** @description Whether to archive the environment's active limits whose names aren't in `limits`. You can restore them later. Default: false, which leaves them alone. */
             archiveMissing?: boolean;
+            /** @description Whether to report what the sync would do without changing anything. Default: false. */
+            dryRun?: boolean;
             /** @description The workspace's kinds, from the top level down: how the app names each and the order its subject pages use for Above and Below. They replace the workspace's kinds, for test and live alike, so only owners and admins (or a workspace key) can send them. Leave this out to leave the kinds alone. Labels only: checks and the API keep using the kinds themselves. */
             kinds?: {
                 /**
@@ -1412,8 +1574,6 @@ export interface components {
              *     ]
              */
             limits: components["schemas"]["LimitSyncEntry"][];
-            /** @description Whether to report what the sync would do without changing anything. Default: false. */
-            preview?: boolean;
             /**
              * @description Where these limits come from, such as the file's name or your deploy's. The app and the 409 name it on every limit the sync sets, as in "Set by limitry.json". The CLI sends the file's name. Default: `a sync`.
              * @example limitry.json
@@ -1434,6 +1594,11 @@ export interface components {
              */
             created: string[];
             /**
+             * @description True when Limitry wrote nothing, and the result shows what a sync would do.
+             * @example false
+             */
+            dryRun: boolean;
+            /**
              * @description The result for `kinds`. It's null when the request has none.
              * @example null
              */
@@ -1450,19 +1615,17 @@ export interface components {
                 restored: boolean;
             } | null;
             /**
-             * @description True when Limitry wrote nothing, and the result shows what a sync would do.
-             * @example false
-             */
-            preview: boolean;
-            /**
              * @description The limits someone overrode in the app, which this sync sets back to the file's values. Their overriders get a notification.
              * @example []
              */
             restored: {
-                /** @example 2026-11-21T14:00:00.000Z */
-                at: string;
                 /** @example AI budget */
                 name: string;
+                /**
+                 * Format: date-time
+                 * @example 2026-11-21T14:00:00.000Z
+                 */
+                overriddenAt: string;
                 /** @example Support incident */
                 reason: string;
             }[];
@@ -1499,19 +1662,23 @@ export interface components {
             email: string;
             /**
              * @description The membership's id.
-             * @example 5070e1f6-5adf-4170-92bd-20cac815d34c
+             * @example mem_5070e1f6-5adf-4170-92bd-20cac815d34c
              */
             id: string;
-            /** @example 2026-08-19T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             joinedAt: string;
             /** @example Ana Lopez */
             name: string;
             /**
              * @description `owner`, `admin`, `member` or `guest`. What each may do is on the docs' Roles page.
              * @example member
+             * @enum {string}
              */
-            role: string;
-            /** @example Vb2KqW8nRx4LmT6pYc9HsJ3dFg7Na1Ue */
+            role: "owner" | "admin" | "member" | "guest";
+            /** @example usr_4f8a2c1e-7b3d-4e9f-a6c5-2d1b0e9f8a7c */
             userId: string;
         };
         MemberPage: {
@@ -1519,61 +1686,72 @@ export interface components {
             /** @description Pass as ?cursor= to fetch the next page. */
             nextCursor: string | null;
         };
-        NamedSubjectRef: {
-            /** @example usr_123 */
-            id: string;
-            /** @example user */
-            kind: string;
+        NamedSubjectRef: components["schemas"]["SubjectRef"] & {
             /**
              * @description Its name, if you gave it one.
              * @example Sara Khan
              */
             name: string | null;
         };
-        RecentCheck: {
-            /** @example ai-call */
-            action: string;
-            /** @example false */
-            allowed: boolean;
-            /** @example 2026-11-21T14:32:08.000Z */
-            at: string;
-            /** @example 5 */
-            cost: number;
-            /** @example consume */
-            mode: string;
-            /** @description Whose limit refused the check, and which. It's null when Limitry allowed the check. */
-            refusedBy: components["schemas"]["RecentCheckSubject"] & ({
-                /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
-                limitId: string | null;
-                /** @example Team AI budget */
-                limitName: string | null;
-            } | null);
-            /** @description Every subject the check named, its own first. */
-            subjects: components["schemas"]["RecentCheckSubject"][];
+        PlanUsage: {
+            counts: components["schemas"]["PlanUsageCount"][];
             /**
-             * @description The unit of `cost`, when every limit the check met counts one. It's null when they differ.
-             * @example cents
+             * @description Things to know about these numbers, such as some usage being unavailable right now.
+             * @example []
              */
-            unit: string | null;
-        };
-        RecentChecks: {
-            items: components["schemas"]["RecentCheck"][];
+            notices?: string[];
             /**
-             * @description The next page's cursor. It's null on the last page.
-             * @example null
+             * Format: date-time
+             * @description When the counts reset.
+             * @example 2026-11-17T14:30:00.000Z
              */
-            nextCursor: string | null;
+            periodEnd: string;
+            /**
+             * Format: date-time
+             * @description When this period began. Each period starts a month after the last one, counted from the billing date.
+             * @example 2026-10-17T14:30:00.000Z
+             */
+            periodStart: string;
+            /**
+             * @description Where the workspace stands, from its most limited count. The order from worst is `stopped`, `grace`, `over`, then `within`.
+             * @example grace
+             * @enum {string}
+             */
+            state: "within" | "grace" | "stopped" | "over";
         };
-        RecentCheckSubject: {
-            /** @example usr_123 */
+        PlanUsageCount: {
+            /** @example Webhook deliveries this period */
+            description: string;
+            /** @example webhook_deliveries */
             id: string;
-            /** @example user */
-            kind: string;
             /**
-             * @description Its name, if you gave it one.
-             * @example Sara Khan
+             * @description The count's name, as the app shows it.
+             * @example Webhook deliveries
              */
-            name: string | null;
+            label: string;
+            /**
+             * @description The limit for this period. Null means unlimited. Zero means your plan includes none.
+             * @example 10000
+             */
+            limit: number | null;
+            /**
+             * @description Where the count stands. `within` is under the limit. `grace` is past the limit, still running until `stopsAt`. `stopped` means we refuse new use until `periodEnd`. `over` is past the limit of a count we never refuse.
+             * @example grace
+             * @enum {string}
+             */
+            state: "within" | "grace" | "stopped" | "over";
+            /**
+             * @description Where we start refusing new use until the period resets. It equals `limit` when the count stops at its limit. It is higher when the count keeps running for a while past it. Null means we never refuse it.
+             * @example 11000
+             */
+            stopsAt: number | null;
+            /**
+             * @description The unit of the limit, when the plan names one. Absent otherwise.
+             * @example per month
+             */
+            unit?: string;
+            /** @example 10400 */
+            used: number;
         };
         Reservation: {
             /**
@@ -1581,7 +1759,10 @@ export interface components {
              * @example 3
              */
             cost: number;
-            /** @example 2026-11-06T12:05:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-11-06T12:05:00.000Z
+             */
             expiresAt: string;
             /** @example rsv_WyJ1c2VyIiwidXNyXzEyMyJd_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
             id: string;
@@ -1611,12 +1792,45 @@ export interface components {
              */
             ttlSeconds?: number;
         };
+        StandingLimit: {
+            /** @example ai-call */
+            action: string;
+            /** @example 200 */
+            amount: number;
+            /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
+            limitId: string;
+            /** @example AI budget */
+            limitName: string;
+            /**
+             * @description What's left. For a balance, it can be more than `amount` once you add credits.
+             * @example 195
+             */
+            remaining: number;
+            /**
+             * Format: date-time
+             * @example 2026-12-01T00:00:00.000Z
+             */
+            resetsAt: string | null;
+            /** @example false */
+            rolling: boolean;
+            subject: components["schemas"]["SubjectRef"];
+            /** @example cents */
+            unit: string;
+            /** @example 5 */
+            used: number;
+            /**
+             * @example month
+             * @enum {string}
+             */
+            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
+        };
         Subject: {
             /**
-             * @description The date the subject's `billing_date` limits count their periods from. It's the billing date you set, or else the time of the subject's first counted check. It's null until the subject has either.
+             * Format: date-time
+             * @description The moment the subject's `billing_date` limits count their periods from. It's the billing date you set, or else the time of the subject's first counted check. It's null until the subject has either.
              * @example 2026-03-17T14:30:00.000Z
              */
-            billingDate: string | null;
+            billingAnchorAt: string | null;
             /**
              * @description The subject's labels, if you gave it any. It's an empty object otherwise.
              * @example {
@@ -1639,7 +1853,7 @@ export interface components {
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
             /** @example AI budget */
-            name: string;
+            limitName: string;
             /** @example 80 */
             remaining: number;
             /** @example 2026-12-01T00:00:00.000Z */
@@ -1648,8 +1862,11 @@ export interface components {
             unit: string;
             /** @example 120 */
             used: number;
-            /** @example month */
-            window: string;
+            /**
+             * @example month
+             * @enum {string}
+             */
+            window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
         };
         SubjectDetail: components["schemas"]["Subject"] & {
             /** @description Every limit on the subject, and where it stands now. */
@@ -1671,26 +1888,27 @@ export interface components {
              *       }
              *     ]
              */
-            items: {
-                /** @example team_42 */
-                id: string;
-                /** @example team */
-                kind: string;
-                /**
-                 * @description Labels to filter by, such as a plan or a region: up to 20 keys of up to 40 characters, with values of up to 200. Optional. They replace the subject's labels. Send null to clear them.
-                 * @example {
-                 *       "plan": "pro"
-                 *     }
-                 */
-                labels?: {
-                    [key: string]: string;
-                } | null;
-                /**
-                 * @description A name people can read, up to 200 characters. Optional. Names don't have to be unique. Send null to clear it.
-                 * @example Design team
-                 */
-                name?: string | null;
-            }[];
+            items: components["schemas"]["SubjectImportItem"][];
+        };
+        SubjectImportItem: {
+            /** @example team_42 */
+            id: string;
+            /** @example team */
+            kind: string;
+            /**
+             * @description Labels to filter by, such as a plan or a region: up to 20 keys of up to 40 characters, with values of up to 200. Optional. They replace the subject's labels. Send null to clear them.
+             * @example {
+             *       "plan": "pro"
+             *     }
+             */
+            labels?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * @description A name people can read, up to 200 characters. Optional. Names don't have to be unique. Send null to clear it.
+             * @example Design team
+             */
+            name?: string | null;
         };
         SubjectImportResult: {
             /**
@@ -1736,13 +1954,10 @@ export interface components {
         };
         SubjectList: {
             items: components["schemas"]["SubjectListItem"][];
-            /**
-             * @description The next page's cursor. It's null on the last page.
-             * @example null
-             */
+            /** @description Pass as ?cursor= to fetch the next page. */
             nextCursor: string | null;
         };
-        SubjectListItem: components["schemas"]["SubjectRef"] & {
+        SubjectListItem: {
             /**
              * @example {
              *       "plan": "pro"
@@ -1752,54 +1967,19 @@ export interface components {
                 [key: string]: string;
             };
             /**
+             * Format: date-time
              * @description When a check last named it, as far as your usage history reaches. It's null for a subject you named that no check has.
              * @example 2026-11-21T14:00:00.000Z
              */
-            lastSeen: string | null;
-            /** @example Design team */
-            name: string | null;
-        };
-        SubjectNames: {
-            /**
-             * @description Labels to filter by, such as a plan or a region: up to 20 keys of up to 40 characters, with values of up to 200. Optional. They replace the subject's labels. Send null to clear them.
-             * @example {
-             *       "plan": "pro"
-             *     }
-             */
-            labels?: {
-                [key: string]: string;
-            } | null;
-            /**
-             * @description A name people can read, up to 200 characters. Optional. Names don't have to be unique. Send null to clear it.
-             * @example Design team
-             */
-            name?: string | null;
-        };
-        SubjectNamesDeleted: {
-            /**
-             * @description Whether there was a name or labels to erase. It's false when the subject had neither.
-             * @example true
-             */
-            deleted: boolean;
-            subject: components["schemas"]["SubjectRef"];
-        };
-        SubjectNamesView: {
-            /**
-             * @example {
-             *       "plan": "pro"
-             *     }
-             */
-            labels: {
-                [key: string]: string;
-            };
+            lastCheckedAt: string | null;
             /** @example Design team */
             name: string | null;
             subject: components["schemas"]["SubjectRef"];
         };
         SubjectRef: {
-            /** @example team_42 */
+            /** @example user_123 */
             id: string;
-            /** @example team */
+            /** @example user */
             kind: string;
         };
         SubjectReset: {
@@ -1816,21 +1996,42 @@ export interface components {
              *       "lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34"
              *     ]
              */
-            reset: string[];
+            limitIds: string[];
+            subject: components["schemas"]["SubjectRef"];
+        };
+        SubjectStanding: {
+            limits: components["schemas"]["StandingLimit"][];
             subject: components["schemas"]["SubjectRef"];
         };
         SubjectUpdate: {
             /**
              * Format: date-time
-             * @description The date and time the subject's periods start from, in ISO 8601, such as a subscription's start.
+             * @description The moment the subject's periods start from, in ISO 8601, such as a subscription's start.
              * @example 2026-03-17T14:30:00Z
              */
-            billingDate: string;
+            billingAnchorAt?: string;
+            /**
+             * @description Labels to filter by, such as a plan or a region: up to 20 keys of up to 40 characters, with values of up to 200. Optional. They replace the subject's labels. Send null to clear them.
+             * @example {
+             *       "plan": "pro"
+             *     }
+             */
+            labels?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * @description A name people can read, up to 200 characters. Optional. Names don't have to be unique. Send null to clear it.
+             * @example Design team
+             */
+            name?: string | null;
         };
         Team: {
-            /** @example 2026-08-19T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             createdAt: string;
-            /** @example 5cfbfbdc-bd74-4b1b-aacf-cc18a0ab960e */
+            /** @example team_5cfbfbdc-bd74-4b1b-aacf-cc18a0ab960e */
             id: string;
             /**
              * @description Whether this is the default team. Every member except a guest belongs to it.
@@ -1840,7 +2041,7 @@ export interface components {
             /**
              * @description The user ids of the team's members.
              * @example [
-             *       "TOlQmSLQpmFUqPNrBPChDbAfJEIpvKGo"
+             *       "usr_4f8a2c1e-7b3d-4e9f-a6c5-2d1b0e9f8a7c"
              *     ]
              */
             memberIds: string[];
@@ -1858,34 +2059,16 @@ export interface components {
              * @example 200
              */
             amount: number;
-            items: {
-                /**
-                 * @description The checks this limit refused for the subject in the window or range.
-                 * @example 2
-                 */
-                refused: number;
-                /**
-                 * @description What's left in the current window. Null for a past range.
-                 * @example 80
-                 */
-                remaining: number | null;
-                /**
-                 * @example {
-                 *       "kind": "user",
-                 *       "id": "usr_123"
-                 *     }
-                 */
-                subject: {
-                    id: string;
-                    kind: string;
-                };
-                /** @example 120 */
-                used: number;
-            }[];
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
             /** @example AI budget */
             limitName: string;
+            /**
+             * Format: date-time
+             * @description When the current period started, or the start of the range you asked for.
+             * @example 2026-11-01T00:00:00.000Z
+             */
+            periodStart: string;
             /**
              * @description The past range the list covers, or null for the current window. Its start is the plan's history limit when you asked for earlier.
              * @example null
@@ -1901,6 +2084,30 @@ export interface components {
              * @example 2026-12-01T00:00:00.000Z
              */
             resetsAt: string | null;
+            subjects: {
+                /**
+                 * @description The checks this limit refused for the subject in the window or range.
+                 * @example 2
+                 */
+                refused: number;
+                /**
+                 * @description What's left in the current window. Null for a past range.
+                 * @example 80
+                 */
+                remaining: number | null;
+                /**
+                 * @example {
+                 *       "kind": "user",
+                 *       "id": "user_123"
+                 *     }
+                 */
+                subject: {
+                    id: string;
+                    kind: string;
+                };
+                /** @example 120 */
+                used: number;
+            }[];
             /**
              * @description What the limit counts in, such as `cents` or `requests`.
              * @example cents
@@ -1911,11 +2118,6 @@ export interface components {
              * @enum {string}
              */
             window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
-            /**
-             * @description When the current window started, or the start of the range you asked for.
-             * @example 2026-11-01T00:00:00.000Z
-             */
-            windowStart: string;
         };
         UsageOverview: {
             limits: {
@@ -1937,11 +2139,11 @@ export interface components {
                         /** @example 2026-11-03T01:07:05.959Z */
                         createdAt: string;
                         /** @example Credit pack */
-                        note: string;
+                        note: string | null;
                         /**
                          * @example {
                          *       "kind": "user",
-                         *       "id": "usr_123"
+                         *       "id": "user_123"
                          *     }
                          */
                         subject: {
@@ -1960,6 +2162,12 @@ export interface components {
                 /** @example AI budget */
                 limitName: string;
                 /**
+                 * Format: date-time
+                 * @description When the limit's current period started, or the start of the range.
+                 * @example 2026-10-01T00:00:00.000Z
+                 */
+                periodStart: string;
+                /**
                  * @description When the current window ends, for a calendar window every subject shares. Null otherwise, and for a past range.
                  * @example null
                  */
@@ -1975,7 +2183,7 @@ export interface components {
                     /**
                      * @example {
                      *       "kind": "user",
-                     *       "id": "usr_123"
+                     *       "id": "user_123"
                      *     }
                      */
                     subject: {
@@ -1996,11 +2204,6 @@ export interface components {
                  * @enum {string}
                  */
                 window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
-                /**
-                 * @description When the limit's current window started, or the start of the range.
-                 * @example 2026-10-01T00:00:00.000Z
-                 */
-                windowStart: string;
             }[];
             /**
              * @description The past range the answer covers, or null for each limit's current window. Its start is the plan's history limit when you asked for earlier.
@@ -2075,63 +2278,6 @@ export interface components {
              */
             window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
         };
-        UsageStanding: {
-            /** @example live */
-            environment: string;
-            limits: {
-                /** @example ai-call */
-                action: string;
-                /** @example 200 */
-                amount: number;
-                /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
-                limitId: string;
-                /** @example AI budget */
-                name: string;
-                /**
-                 * @description What's left. For a balance, it can be more than `amount` once you add credits.
-                 * @example 195
-                 */
-                remaining: number;
-                /** @example 2026-12-01T00:00:00.000Z */
-                resetsAt: string | null;
-                /** @example false */
-                rolling: boolean;
-                /**
-                 * @description True when the limit is on one of the shared subjects, not on this one.
-                 * @example false
-                 */
-                shared: boolean;
-                /**
-                 * @example {
-                 *       "kind": "user",
-                 *       "id": "usr_123"
-                 *     }
-                 */
-                subject: {
-                    id: string;
-                    kind: string;
-                };
-                /** @example cents */
-                unit: string;
-                /** @example 5 */
-                used: number;
-                /**
-                 * @example month
-                 * @enum {string}
-                 */
-                window: "minute" | "hour" | "day" | "week" | "month" | "year" | "total" | "concurrent";
-            }[];
-            /**
-             * @example {
-             *       "kind": "user",
-             *       "id": "usr_123"
-             *     }
-             */
-            subject: {
-                id: string;
-                kind: string;
-            };
-        };
         UsageTotal: {
             /**
              * @description The checks allowed in the range.
@@ -2152,57 +2298,74 @@ export interface components {
         UserMe: {
             /** @example casey@example.com */
             email: string;
-            /** @example TOlQmSLQpmFUqPNrBPChDbAfJEIpvKGo */
+            /** @example usr_4f8a2c1e-7b3d-4e9f-a6c5-2d1b0e9f8a7c */
             id: string;
             /** @example Casey Customer */
             name: string;
-            workspaces: {
-                /** @example 9418b705-3720-48ca-b2bf-f726d1456684 */
-                id: string;
-                /** @example Acme Inc. */
-                name: string;
-                /** @example owner */
-                role: string;
-                /** @example acme */
-                slug: string;
-            }[];
+            workspaces: components["schemas"]["UserMembership"][];
+        };
+        UserMembership: {
+            /** @example ws_9418b705-3720-48ca-b2bf-f726d1456684 */
+            id: string;
+            /** @example Acme Inc. */
+            name: string;
+            /**
+             * @example owner
+             * @enum {string}
+             */
+            role: "owner" | "admin" | "member" | "guest";
+            /** @example acme */
+            slug: string;
         };
         WebhookDelivery: {
             /** @example 1 */
             attempts: number;
-            /** @example 2026-08-19T12:05:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:05:00.000Z
+             */
             createdAt: string;
-            /** @example evt_51c2… */
+            /** @example evt_51c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e */
             eventId: string;
             /** @example workspace.member.joined */
             eventType: string;
-            /** @example del_8a1b… */
+            /** @example del_8a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c3d */
             id: string;
-            /** @example 2026-08-19T12:05:00.000Z */
-            lastAttemptAt: string | null;
-            /** @example 200 */
-            lastStatus: number | null;
             /**
-             * @description `pending`, `delivered` or `failed`.
-             * @example delivered
+             * Format: date-time
+             * @example 2026-08-19T12:05:00.000Z
              */
-            status: string;
+            lastAttemptAt: string | null;
+            /**
+             * @description The HTTP status code of the last attempt. Null before the first attempt, or when it got no response.
+             * @example 200
+             */
+            lastHttpStatus: number | null;
+            /**
+             * @description The delivery's state. `pending` is waiting or retrying, `delivered` reached the endpoint, and `failed` gave up.
+             * @example delivered
+             * @enum {string}
+             */
+            status: "pending" | "delivered" | "failed";
         };
         WebhookDeliveryOutcome: {
-            /** @example del_8a1b… */
+            /** @example del_8a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c3d */
             deliveryId: string;
+            /**
+             * @description For a delivery attempted immediately, the HTTP status code the endpoint answered with. Null when it got no response.
+             * @example 200
+             */
+            httpStatus?: number | null;
             /**
              * @description For a delivery attempted immediately, whether the endpoint accepted it.
              * @example true
              */
             ok?: boolean;
             /**
-             * @description True when the delivery went to the queue, with retries. False when it was attempted immediately.
+             * @description True when the delivery went to the queue, with retries (the response is a 202). False when it was attempted immediately (a 200).
              * @example false
              */
             queued: boolean;
-            /** @example 200 */
-            status?: number | null;
         };
         WebhookDeliveryPage: {
             items: components["schemas"]["WebhookDelivery"][];
@@ -2212,7 +2375,10 @@ export interface components {
         WebhookEndpoint: {
             /** @example 0 */
             consecutiveFailures: number;
-            /** @example 2026-08-19T12:00:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
             createdAt: string;
             /** @example Order sync */
             description: string | null;
@@ -2233,19 +2399,25 @@ export interface components {
              *     ]
              */
             eventTypes: string[] | null;
-            /** @example we_3f0c… */
+            /** @example we_3f0c1a2e-4b5d-4c6e-8f70-1a2b3c4d5e6f */
             id: string;
-            /** @example 2026-08-19T12:05:00.000Z */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:05:00.000Z
+             */
             lastAttemptAt: string | null;
-            /** @example 200 */
-            lastStatus: number | null;
+            /**
+             * @description The HTTP status code the endpoint answered the last delivery with. Null before the first delivery, or when the last one got no response.
+             * @example 200
+             */
+            lastHttpStatus: number | null;
+            /**
+             * @description The endpoint's signing secret. Only the response that creates the endpoint has it, so store it then to verify deliveries.
+             * @example whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
+             */
+            secret?: string;
             /** @example https://example.com/hooks */
             url: string;
-        };
-        WebhookEndpointCreated: {
-            endpoint: components["schemas"]["WebhookEndpoint"];
-            /** @example whsec_… */
-            secret: string;
         };
         WebhookEndpointPage: {
             items: components["schemas"]["WebhookEndpoint"][];
@@ -2253,67 +2425,20 @@ export interface components {
             nextCursor: string | null;
         };
         Workspace: {
-            /** @example 9418b705-3720-48ca-b2bf-f726d1456684 */
+            /**
+             * Format: date-time
+             * @example 2026-08-19T12:00:00.000Z
+             */
+            createdAt: string;
+            /** @example ws_9418b705-3720-48ca-b2bf-f726d1456684 */
             id: string;
             /** @example Acme Inc. */
             name: string;
-        };
-        WorkspaceUsage: {
-            counts: {
-                /** @example Webhook deliveries this period */
-                description: string;
-                /** @example webhook_deliveries */
-                id: string;
-                /**
-                 * @description The count's name, as the app shows it.
-                 * @example Webhook deliveries
-                 */
-                label: string;
-                /**
-                 * @description The limit for this period. Null means unlimited. Zero means your plan includes none.
-                 * @example 10000
-                 */
-                limit: number | null;
-                /**
-                 * @description Where the count stands. `within` is under the limit. `grace` is past the limit, still running until `stopsAt`. `stopped` means we refuse new use until `periodEnd`. `over` is past the limit of a count we never refuse.
-                 * @example grace
-                 * @enum {string}
-                 */
-                state: "within" | "grace" | "stopped" | "over";
-                /**
-                 * @description Where we start refusing new use until the period resets. It equals `limit` when the count stops at its limit. It is higher when the count keeps running for a while past it. Null means we never refuse it.
-                 * @example 11000
-                 */
-                stopsAt: number | null;
-                /**
-                 * @description The unit of the limit, when the plan names one. Absent otherwise.
-                 * @example per month
-                 */
-                unit?: string;
-                /** @example 10400 */
-                used: number;
-            }[];
             /**
-             * @description Things to know about these numbers, such as some usage being unavailable right now.
-             * @example []
+             * @description The workspace's short name, as in its URLs. A personal access token sends it as `X-Workspace`.
+             * @example acme
              */
-            notices?: string[];
-            /**
-             * @description When the counts reset.
-             * @example 2026-11-17T14:30:00.000Z
-             */
-            periodEnd: string;
-            /**
-             * @description When this period began. Each period starts a month after the last one, counted from the billing date.
-             * @example 2026-10-17T14:30:00.000Z
-             */
-            periodStart: string;
-            /**
-             * @description Where the workspace stands, from its most limited count. The order from worst is `stopped`, `grace`, `over`, then `within`.
-             * @example grace
-             * @enum {string}
-             */
-            state: "within" | "grace" | "stopped" | "over";
+            slug: string;
         };
     };
     responses: never;
@@ -2324,6 +2449,78 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "checks.list": {
+        parameters: {
+            query?: {
+                /** @description Start from this moment: items older than it, newest first. Ignored with `cursor`, which already says where to go on. */
+                before?: string;
+                /** @description Opaque token from a previous page's nextCursor. */
+                cursor?: string;
+                /** @description Items per page, 1–100 (default 25). */
+                limit?: number;
+                /** @description `true` for only refused checks. */
+                refused?: "true" | "false";
+                /** @description Only checks that named this subject, as `kind:id`. */
+                subject?: string;
+            };
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of recent checks. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckList"];
+                };
+            };
+            /** @description A filter or the cursor is invalid (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     "checks.create": {
         parameters: {
             query?: never;
@@ -2350,13 +2547,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CheckDecision"];
                 };
-            };
-            /** @description The request sent `limitry-finish-only: 1`, and there was no earlier try with its Idempotency-Key to finish. Limitry decided and charged nothing. A client sends that header to finish a try that timed out. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description The request is invalid (code: invalid_request). */
             400: {
@@ -2394,6 +2584,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description The request sent `limitry-finish-only: 1`, and there was no earlier try with its Idempotency-Key to finish (code: not_found). Limitry decided and charged nothing. A client sends that header to finish a try that timed out. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description This Idempotency-Key was already used for a different check (code: idempotency_key_reused). */
             409: {
                 headers: {
@@ -2412,78 +2611,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The API couldn't return a decision. Retry with the same Idempotency-Key. The code `moving` means the subject is moving between Limitry's servers for a few seconds, and Retry-After says when to try again. Limitry charged nothing, and the retry finishes or gives back anything held. The code `busy` means Limitry is deciding too many checks for these subjects at once. It charged nothing, so wait for Retry-After and back off. The code `internal_error` means checks are unavailable, or Limitry couldn't confirm a check across its servers in time and may have charged it. */
+            /** @description The API couldn't return a decision. Retry with the same Idempotency-Key. The code `moving` means the subject is moving between Limitry's servers for a few seconds, and Retry-After says when to try again. Limitry charged nothing, and the retry finishes or gives back anything held. The code `busy` means Limitry is deciding too many checks for these subjects at once. It charged nothing, so wait for Retry-After and back off. The code `unavailable` means checks are unavailable for now. The code `internal_error` means Limitry couldn't confirm a check across its servers in time and may have charged it. */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    "checks.recent": {
-        parameters: {
-            query?: {
-                /** @description The `nextCursor` of the page before. */
-                cursor?: string;
-                /** @description How many to return, from 1 to 100. Default: 25. */
-                limit?: number;
-                /** @description `true` for only refused checks. */
-                refused?: "true" | "false";
-                /** @description Only checks that named this subject, as `kind:id`. */
-                subject?: string;
-            };
-            header?: {
-                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
-                "x-environment"?: string;
-                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
-                "x-workspace"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description A page of recent checks. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecentChecks"];
-                };
-            };
-            /** @description A filter or the cursor is invalid (code: invalid_request). */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2586,6 +2715,8 @@ export interface operations {
             /** @description The new limit. */
             201: {
                 headers: {
+                    /** @description The path of the new resource, under `/v1`. */
+                    Location: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2619,7 +2750,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description An active limit already has this name (code: invalid_request). Without a `name` in the request, the clash is with the name the limit would get by default. Send a `name` of its own. */
+            /** @description An active limit already has this name, or a sync sets this limit (code: conflict). Without a `name` in the request, the clash is with the name the limit would get by default. Send a `name` of its own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2778,7 +2909,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description An active limit already has this name (code: invalid_request). Without a `name` in the request, the clash is with the name the limit would get by default. Send a `name` of its own. */
+            /** @description An active limit already has this name, or a sync sets this limit (code: conflict). Without a `name` in the request, the clash is with the name the limit would get by default. Send a `name` of its own. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2815,12 +2946,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Limitry archived the limit. */
-            204: {
+            /** @description The archived limit. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Limit"];
+                };
             };
             /** @description The name matches more than one limit ignoring case (code: invalid_request). The message names each one: send the exact name or the ID. */
             400: {
@@ -2975,6 +3108,8 @@ export interface operations {
             /** @description The credit, now applied to the balance. */
             201: {
                 headers: {
+                    /** @description The path of the new resource, under `/v1`. */
+                    Location: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -3026,8 +3161,82 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    "limits.credits.get": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path: {
+                creditId: string;
+                /** @description The limit's ID, or its name, such as `AI budget` (URL-encoded). A name matches an active limit in this environment, exactly or else ignoring case. */
+                limitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The credit. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Credit"];
+                };
+            };
+            /** @description The name matches more than one limit ignoring case (code: invalid_request). The message names each one: send the exact name or the ID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This workspace has no such limit (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3128,7 +3337,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description What changed, or with `preview`, what would change. */
+            /** @description What changed, or with `dryRun`, what would change. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3175,7 +3384,7 @@ export interface operations {
             };
         };
     };
-    "reservations.commit": {
+    "reservations.get": {
         parameters: {
             query?: never;
             header?: {
@@ -3189,11 +3398,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReservationCommit"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description The reservation. */
             200: {
@@ -3204,7 +3409,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description The reservation was already settled the other way, or the cost is invalid (code: invalid_request). */
+            /** @description The environment is unknown (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3249,7 +3454,101 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is internal_error. */
+            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry. If checks are unavailable, the code is `unavailable`, with Retry-After. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    "reservations.commit": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path: {
+                reservationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReservationCommit"];
+            };
+        };
+        responses: {
+            /** @description The reservation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            /** @description The cost is invalid, or a commit repeats with a different cost (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This workspace has no such reservation (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The reservation was already settled the other way, or an extend found it no longer held (code: conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is `unavailable`, with Retry-After. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3289,7 +3588,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description The reservation was already settled the other way, or the cost is invalid (code: invalid_request). */
+            /** @description The cost is invalid, or a commit repeats with a different cost (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3325,6 +3624,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description The reservation was already settled the other way, or an extend found it no longer held (code: conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
@@ -3334,7 +3642,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is internal_error. */
+            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is `unavailable`, with Retry-After. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3370,7 +3678,7 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description The reservation was already settled the other way, or the cost is invalid (code: invalid_request). */
+            /** @description The cost is invalid, or a commit repeats with a different cost (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3406,6 +3714,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description The reservation was already settled the other way, or an extend found it no longer held (code: conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
@@ -3415,7 +3732,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is internal_error. */
+            /** @description The reservation's subject is moving between Limitry's servers for a few seconds (code: moving, with Retry-After). Retry, and the same commit, release or extend returns the same result. If checks are unavailable, the code is `unavailable`, with Retry-After. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3429,13 +3746,13 @@ export interface operations {
     "subjects.list": {
         parameters: {
             query?: {
-                /** @description The `nextCursor` of the page before. */
+                /** @description Opaque token from a previous page's nextCursor. */
                 cursor?: string;
                 /** @description Only subjects of this kind. */
                 kind?: string;
                 /** @description Only subjects with this label, as `key:value`. */
                 label?: string;
-                /** @description How many to return, from 1 to 100. Default: 25. */
+                /** @description Items per page, 1–100 (default 25). */
                 limit?: number;
                 /** @description Only subjects whose name or ID contains this text, in any case. */
                 q?: string;
@@ -3524,7 +3841,7 @@ export interface operations {
                     "application/json": components["schemas"]["SubjectDetail"];
                 };
             };
-            /** @description The environment is unknown (code: invalid_request). */
+            /** @description The request is invalid (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3551,6 +3868,24 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description This workspace has no such limit or environment (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
@@ -3560,63 +3895,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    "subjects.delete": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
-                "x-environment"?: string;
-                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
-                "x-workspace"?: string;
-            };
-            path: {
-                subjectId: string;
-                subjectKind: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The name and labels are erased. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubjectNamesDeleted"];
-                };
-            };
-            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3656,7 +3936,7 @@ export interface operations {
                     "application/json": components["schemas"]["Subject"];
                 };
             };
-            /** @description The billing date is invalid (code: invalid_request). */
+            /** @description The billing date, the name or the labels are invalid, or the request sends none of them (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3676,6 +3956,24 @@ export interface operations {
             };
             /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This workspace has no such limit or environment (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3692,7 +3990,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3703,7 +4001,7 @@ export interface operations {
             };
         };
     };
-    "subjects.set": {
+    "subjects.names.delete": {
         parameters: {
             query?: never;
             header?: {
@@ -3718,22 +4016,16 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubjectNames"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description The subject's name and labels, as they now are. */
-            200: {
+            /** @description The name and labels are erased. */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["SubjectNamesView"];
-                };
+                content?: never;
             };
-            /** @description The name or labels are invalid (code: invalid_request). */
+            /** @description The request is invalid (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3753,6 +4045,24 @@ export interface operations {
             };
             /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This workspace has no such limit or environment (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3801,6 +4111,15 @@ export interface operations {
                     "application/json": components["schemas"]["SubjectResetResult"];
                 };
             };
+            /** @description The request is invalid (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
             401: {
                 headers: {
@@ -3828,6 +4147,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
@@ -3837,7 +4165,83 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable (code: internal_error). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    "subjects.standing": {
+        parameters: {
+            query?: {
+                /** @description Shared subjects to include, as comma-separated `kind:id` pairs. Send up to 4. */
+                shared?: string;
+            };
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path: {
+                subjectId: string;
+                subjectKind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Where the subject stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectStanding"];
+                };
+            };
+            /** @description `shared` is invalid (code: invalid_request). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3895,6 +4299,24 @@ export interface operations {
             };
             /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This workspace has no such limit or environment (code: not_found). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4059,8 +4481,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
-            429: {
+            /** @description This workspace has no such environment (code: not_found). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4068,56 +4490,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-        };
-    };
-    "usage.standing": {
-        parameters: {
-            query: {
-                /** @description Shared subjects to include, as comma-separated `kind:id` pairs. Send up to 4. */
-                shared?: string;
-                /** @description The subject, written as `kind:id` exactly as your checks send it. */
-                subject: string;
-            };
-            header?: {
-                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
-                "x-environment"?: string;
-                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
-                "x-workspace"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Where the subject stands. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UsageStanding"];
-                };
-            };
-            /** @description The subject is invalid (code: invalid_request). */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
-            403: {
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4127,15 +4501,6 @@ export interface operations {
             };
             /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
             429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Checks are unavailable (code: internal_error). */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4150,8 +4515,6 @@ export interface operations {
             query?: {
                 /** @description The start of the range, in ISO 8601. */
                 from?: string;
-                /** @description How many subjects to list. Default: 50. The response holds at most 50, or 25 for a `concurrent` limit, even if you ask for more. */
-                limit?: number;
                 /** @description The limit's ID. Send this or `limitName`. */
                 limitId?: string;
                 /** @description The limit's name, instead of its ID. It matches an active limit in this environment, exactly or else ignoring case. */
@@ -4162,6 +4525,8 @@ export interface operations {
                 sort?: "used" | "refused";
                 /** @description The end of the range, in ISO 8601. Default: now. */
                 to?: string;
+                /** @description How many subjects to rank, up to 50. Default: 50. A `concurrent` limit ranks at most 25. */
+                top?: number;
             };
             header?: {
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
@@ -4212,6 +4577,15 @@ export interface operations {
             };
             /** @description This workspace has no such limit (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request clashes with the resource's state, such as a name a sync locks (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4412,38 +4786,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: {
-                            /**
-                             * @example [
-                             *       "owner"
-                             *     ]
-                             */
-                            approverRoles: string[];
-                            /** @example true */
-                            createsSecret: boolean;
-                            /** @example workspace.apiKey.create */
-                            id: string;
-                            /**
-                             * @example {
-                             *       "type": "object",
-                             *       "properties": {
-                             *         "name": {
-                             *           "type": "string"
-                             *         }
-                             *       },
-                             *       "required": [
-                             *         "name"
-                             *       ]
-                             *     }
-                             */
-                            input: {
-                                [key: string]: unknown;
-                            };
-                            /** @example Create an API key */
-                            title: string;
-                        }[];
-                    };
+                    "application/json": components["schemas"]["ApprovalActionPage"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -4519,6 +4862,8 @@ export interface operations {
             /** @description The new request, waiting for a person to decide. */
             201: {
                 headers: {
+                    /** @description The path of the new resource, under `/v1`. */
+                    Location: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4573,8 +4918,8 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
-                /** @description The request's id. */
-                requestId: string;
+                /** @description The approval request's id. */
+                approvalRequestId: string;
             };
             cookie?: never;
         };
@@ -4637,8 +4982,8 @@ export interface operations {
                 "x-workspace"?: string;
             };
             path: {
-                /** @description The request's id. */
-                requestId: string;
+                /** @description The approval request's id. */
+                approvalRequestId: string;
             };
             cookie?: never;
         };
@@ -4650,16 +4995,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** @example LIMITRY_API_KEY */
-                        envVar: string | null;
-                        request: components["schemas"]["ApprovalRequest"];
-                        /** @example sk_limitry_… */
-                        secret: string | null;
-                    };
+                    "application/json": components["schemas"]["ApprovalRedemption"];
                 };
             };
-            /** @description The request isn't approved, was already redeemed or has expired (code: invalid_request). */
+            /** @description The action itself failed when it ran, and the request is now `failed` (code: invalid_request). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4688,6 +5027,15 @@ export interface operations {
             };
             /** @description The request isn't yours (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request isn't approved, was already redeemed or has expired (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4798,14 +5146,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: {
-                            /** @example A person joined the workspace, by accepting an invitation or being added. `data.userId` says who. */
-                            description: string;
-                            /** @example workspace.member.joined */
-                            type: string;
-                        }[];
-                    };
+                    "application/json": components["schemas"]["EventTypePage"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -4969,6 +5310,58 @@ export interface operations {
             };
         };
     };
+    "workspace.planUsage.get": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
+                "x-environment"?: string;
+                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
+                "x-workspace"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description This period's usage. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanUsage"];
+                };
+            };
+            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     "workspace.teams.list": {
         parameters: {
             query?: {
@@ -5004,58 +5397,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    "workspace.usage": {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
-                "x-environment"?: string;
-                /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
-                "x-workspace"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description This period's usage. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceUsage"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -5172,13 +5513,15 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The endpoint and its signing secret. You see the secret only once. */
+            /** @description The new endpoint, with its signing secret in `secret`. You see the secret only once. */
             201: {
                 headers: {
+                    /** @description The path of the new resource, under `/v1`. */
+                    Location: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WebhookEndpointCreated"];
+                    "application/json": components["schemas"]["WebhookEndpoint"];
                 };
             };
             /** @description Invalid request (code: invalid_request). */
@@ -5532,8 +5875,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The redelivery was sent or queued. */
-            202: {
+            /** @description We attempted the redelivery. `ok` and `httpStatus` say how the endpoint answered. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5541,13 +5884,13 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookDeliveryOutcome"];
                 };
             };
-            /** @description Invalid request (code: invalid_request). */
-            400: {
+            /** @description The redelivery is queued. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["WebhookDeliveryOutcome"];
                 };
             };
             /** @description The API key or personal access token is missing, malformed or invalid (code: unauthorized). A revoked or expired one gets the same error. */
@@ -5570,6 +5913,15 @@ export interface operations {
             };
             /** @description The endpoint or delivery isn't in this workspace (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The endpoint is disabled (code: conflict). Re-enable it, then redeliver. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5667,7 +6019,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The test delivery was sent or queued. */
+            /** @description We attempted the test delivery. `ok` and `httpStatus` say how the endpoint answered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryOutcome"];
+                };
+            };
+            /** @description The test delivery is queued. */
             202: {
                 headers: {
                     [name: string]: unknown;

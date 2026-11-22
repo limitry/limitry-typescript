@@ -1,11 +1,16 @@
 import { brand } from "./brand.ts";
 import createOpenApiClient from "openapi-fetch";
 
-import { apiErrorFrom } from "./errors.ts";
-import { callSignal } from "./resources.ts";
+import { apiErrorFrom, withConnectionErrors } from "./errors.ts";
 import * as product from "./product/index.ts";
 import { resources } from "./resources.gen.ts";
-import { withoutProductRetryHeader, withRetries } from "./retry.ts";
+import {
+  DEFAULT_TIMEOUT_MS,
+  withAttemptTimeout,
+  withoutProductRetryHeader,
+  withRetries,
+} from "./retry.ts";
+import { VERSION } from "./version.ts";
 import { verifyWebhook } from "./webhooks.ts";
 import type { components, paths } from "./v1.gen.ts";
 
@@ -13,7 +18,7 @@ import type { components, paths } from "./v1.gen.ts";
  * The product's API client: openapi-fetch over the types GENERATED from
  * the /v1 routes (./v1.gen.ts — generated, gitignored). Every call is
  * typed by path and method; responses come back as `{ data, error,
- * response }`, or use `unwrap()` to throw an ApiError instead.
+ * response }`, or use `unwrap()` to throw an APIError instead.
  *
  *   const api = createClient({ apiKey: process.env.KEY! });
  *   const { data } = await api.GET("/workspace");
@@ -34,17 +39,47 @@ import type { components, paths } from "./v1.gen.ts";
  * environments, `environment` names the one to act in (`X-Environment`;
  * a key bound to one always acts in its own) — without it, the product's
  * default. The default origin is the product's API host per brand.json;
- * pass `api` to point elsewhere.
+ * pass `baseURL` (or set `<NAME>_BASE_URL`, BASE_URL_ENV) to point
+ * elsewhere, and `defaultHeaders` to send more headers on every call.
+ * Outside a browser, every request names the SDK in its User-Agent
+ * (`<name>-node/<version>`).
  *
  * Every write sends an Idempotency-Key (yours, from `{ idempotencyKey }`,
  * else one per call) and a failed attempt — network error, 5xx, 429 —
  * is retried with the same key, twice by default (./retry.ts), so a
- * retried write runs once. A `timeout` (the client's, or a call's) or a
- * call's `signal` bounds the whole call, retries and waits included.
+ * retried write runs once. A `timeout` (the client's, or a call's) limits
+ * each attempt; a call's `signal` ends the whole call, waits included.
+ *
+ * Failures are the SDK's errors (./errors.ts): an APIError subclass per
+ * status when the API answered, APIConnectionError (APITimeoutError)
+ * when it didn't. A list returns a PagePromise (./pagination.ts).
  */
 export type { components, paths };
 export type Schemas = components["schemas"];
-export { ApiError, apiErrorFrom } from "./errors.ts";
+export {
+  APIConnectionError,
+  APIError,
+  APITimeoutError,
+  AuthenticationError,
+  BadRequestError,
+  ConflictError,
+  InternalServerError,
+  NotFoundError,
+  PermissionDeniedError,
+  PlanLimitError,
+  RateLimitError,
+  UnprocessableEntityError,
+  apiErrorFrom,
+  connectionErrorFrom,
+  errorClassFor,
+  withConnectionErrors,
+  type APIErrorInit,
+  type ErrorDetail,
+} from "./errors.ts";
+// The base error, under the product's name (PlatformError, LimitryError…).
+export * from "./errors.gen.ts";
+export { Page, PagePromise, type PageBody } from "./pagination.ts";
+export { VERSION } from "./version.ts";
 export {
   verifyWebhook,
   WebhookVerificationError,
@@ -60,8 +95,11 @@ export const API_KEY_ENV = `${brand.identifier.toUpperCase()}_API_KEY`;
 /** The variable read next, the CLI's personal access token: <NAME>_TOKEN. */
 export const TOKEN_ENV = `${brand.identifier.toUpperCase()}_TOKEN`;
 
+/** The variable read when `baseURL` is not passed: <NAME>_BASE_URL. */
+export const BASE_URL_ENV = `${brand.identifier.toUpperCase()}_BASE_URL`;
+
 /** The product's API origin (no path): https://api.<domain>. */
-export const DEFAULT_API = `https://api.${brand.domain}`;
+export const DEFAULT_BASE_URL = `https://api.${brand.domain}`;
 
 export type ClientOptions = {
   /**
@@ -78,8 +116,13 @@ export type ClientOptions = {
   workspace?: string;
   /** Environment sent as X-Environment (where the product has them; else ignored). */
   environment?: string;
-  /** API origin, without /v1 (default: DEFAULT_API). */
-  api?: string;
+  /**
+   * The API's origin, without /v1. Default: the BASE_URL_ENV environment
+   * variable where there is one, else DEFAULT_BASE_URL.
+   */
+  baseURL?: string;
+  /** Headers sent with every request (a call's own `headers` win). */
+  defaultHeaders?: Record<string, string>;
   /** Custom fetch (tests, Workers service bindings). */
   fetch?: (input: Request) => Promise<Response>;
   /**
@@ -89,10 +132,10 @@ export type ClientOptions = {
    */
   maxRetries?: number;
   /**
-   * The most any call may take, in milliseconds, its retries and their
-   * waits included; past it the call throws a TimeoutError. Default:
-   * none. A call's own `timeout` or `signal` applies as well, and the
-   * first to end the call wins.
+   * Each attempt's limit, in milliseconds (default 60 000); a timed-out
+   * attempt is retried with the same key. A call's own `timeout` takes
+   * its place; to limit a whole call, pass it a `signal`
+   * (`AbortSignal.timeout(ms)`).
    */
   timeout?: number;
 };
@@ -139,28 +182,32 @@ function createBaseClient(options: ClientOptions) {
       `${brand.productName}: no API key. Pass { apiKey } or set ${API_KEY_ENV}.`,
     );
   }
-  const origin = withoutTrailingSlashes(options.api ?? DEFAULT_API);
-  const send = options.fetch ?? ((request: Request) => fetch(request));
+  const origin = withoutTrailingSlashes(
+    options.baseURL || environment()?.[BASE_URL_ENV] || DEFAULT_BASE_URL,
+  );
+  const send = withAttemptTimeout(
+    options.fetch ?? ((request: Request) => fetch(request)),
+    options.timeout ?? DEFAULT_TIMEOUT_MS,
+  );
   const sending =
     options.maxRetries === 0
       ? withoutProductRetryHeader(send)
       : withRetries(send, { maxRetries: options.maxRetries });
-  // The client's timeout bounds the whole call, so it wraps the retries.
-  const timeout = options.timeout;
   const client = createOpenApiClient<paths>({
     baseUrl: `${origin}/v1`,
-    fetch:
-      timeout === undefined
-        ? sending
-        : (request) =>
-            sending(
-              new Request(request, {
-                signal: callSignal(request.signal, timeout),
-              }),
-            ),
+    fetch: withConnectionErrors(sending),
   });
   client.use({
     onRequest({ request }) {
+      for (const [name, value] of Object.entries(
+        options.defaultHeaders ?? {},
+      )) {
+        if (!request.headers.has(name)) request.headers.set(name, value);
+      }
+      // A browser sends its own User-Agent (and would need CORS for ours).
+      if (!("document" in globalThis) && !request.headers.has("user-agent")) {
+        request.headers.set("user-agent", USER_AGENT);
+      }
       request.headers.set("authorization", `Bearer ${token}`);
       if (options.workspace && !request.headers.has("x-workspace")) {
         request.headers.set("x-workspace", options.workspace);
@@ -182,15 +229,23 @@ function createBaseClient(options: ClientOptions) {
 
 export type Client = ReturnType<typeof createClient>;
 
-function credentialFromEnvironment(): string | undefined {
+/** The SDK's User-Agent: `<name>-node/<version>`. */
+export const USER_AGENT = `${brand.name}-node/${VERSION}`;
+
+/** `process.env`, where the runtime has one (Node, Bun, Deno). */
+function environment(): Record<string, string | undefined> | undefined {
   const runtime = globalThis as {
     process?: { env?: Record<string, string | undefined> };
   };
-  const env = runtime.process?.env;
+  return runtime.process?.env;
+}
+
+function credentialFromEnvironment(): string | undefined {
+  const env = environment();
   return env?.[API_KEY_ENV] || env?.[TOKEN_ENV] || undefined;
 }
 
-/** `data` of a successful result; throws ApiError for an error result. */
+/** `data` of a successful result; throws an APIError for an error result. */
 export function unwrap<
   T extends { data?: unknown; error?: unknown; response: Response },
 >(result: T): NonNullable<T["data"]> {

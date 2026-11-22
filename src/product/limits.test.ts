@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createClient } from "../index.ts";
-import { createLimits, LimitReached, Unavailable } from "./limits.ts";
+import {
+  APIConnectionError,
+  BadRequestError,
+  createClient,
+  LimitryError,
+  NotFoundError,
+} from "../index.ts";
+import { createLimits, LimitReachedError, UnavailableError } from "./limits.ts";
 
 type Handler = (path: string, body: unknown) => Response | Promise<Response>;
 
@@ -15,7 +21,7 @@ function limitsWith(handler: Handler, options = {}, random = () => 0) {
   }[] = [];
   const client = createClient({
     token: "sk_test",
-    api: "https://api.example.test",
+    baseURL: "https://api.example.test",
     fetch: async (request: Request) => {
       const path = new URL(request.url).pathname.replace(/^\/v1/, "");
       const text = await request.text();
@@ -32,7 +38,7 @@ function limitsWith(handler: Handler, options = {}, random = () => 0) {
   return {
     limits: createLimits(
       client,
-      { timeoutMs: 100, ...options },
+      { timeout: 100, ...options },
       { sleep: async (ms) => void slept.push(ms), random },
     ),
     calls,
@@ -51,15 +57,20 @@ const decision = (
   extra = {},
 ) =>
   Response.json({
-    id: "chk_1",
     allowed,
     reason: allowed
       ? null
-      : { code: "limit_reached", limitId: "lmt_a", message: "Refused by A." },
+      : {
+          code: "limit_reached",
+          limitId: "lmt_a",
+          limitName: "A",
+          subject: { kind: "user", id: "u1" },
+          message: "Refused by A.",
+        },
     limits: [
       {
         limitId: "lmt_a",
-        name: "A",
+        limitName: "A",
         unit: "units",
         window: "day",
         rolling: false,
@@ -74,12 +85,12 @@ const decision = (
 const subject = { kind: "user", id: "u1" };
 
 describe("a subject being handed over (`moving`)", () => {
-  it("asks again with the same key while the wait fits in timeoutMs, and counts the work", async () => {
+  it("asks again with the same key while the wait fits in timeout, and counts the work", async () => {
     let n = 0;
     const work = vi.fn(async () => "done");
     const { limits, calls } = limitsWith(
       (path) => (path === "/checks" && n++ < 3 ? moving() : decision(true)),
-      { timeoutMs: 10_000 },
+      { timeout: 10_000 },
     );
     expect(await limits.guard({ subject, action: "run" }, work)).toBe("done");
     expect(work).toHaveBeenCalledTimes(1);
@@ -88,9 +99,9 @@ describe("a subject being handed over (`moving`)", () => {
     expect(new Set(checks.map((c) => c.key)).size).toBe(1);
   });
 
-  it("is unreachable once the next wait won't fit in timeoutMs: then the fail mode decides", async () => {
+  it("is unreachable once the next wait won't fit in timeout: then the fail mode decides", async () => {
     const work = vi.fn(async () => "ran");
-    const open = limitsWith(() => moving(), { timeoutMs: 1500 });
+    const open = limitsWith(() => moving(), { timeout: 1500 });
     slept.length = 0;
     expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
       "ran",
@@ -100,12 +111,12 @@ describe("a subject being handed over (`moving`)", () => {
     expect(open.calls.length).toBe(2);
     expect(slept).toEqual([1000]);
     const closed = limitsWith(() => moving(), {
-      timeoutMs: 1500,
+      timeout: 1500,
       failMode: "closed",
     });
     await expect(
       closed.limits.guard({ subject, action: "run" }, work),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
   });
 
   it("keeps a commit going through a handover, with the same key", async () => {
@@ -122,7 +133,7 @@ describe("a subject being handed over (`moving`)", () => {
         if (path.endsWith("/commit") && commits++ < 2) return moving();
         return Response.json({ id: "rsv_1", status: "committed" });
       },
-      { timeoutMs: 10_000 },
+      { timeout: 10_000 },
     );
     await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
     const sent = calls.filter((c) => c.path.endsWith("/commit"));
@@ -143,7 +154,7 @@ describe("an overloaded limiter (`busy`)", () => {
     const work = vi.fn(async () => "done");
     const { limits, calls } = limitsWith(
       (path) => (path === "/checks" && n++ < 3 ? busy() : decision(true)),
-      { timeoutMs: 30_000 },
+      { timeout: 30_000 },
       () => 0.5,
     );
     slept.length = 0;
@@ -160,7 +171,7 @@ describe("an overloaded limiter (`busy`)", () => {
     const work = vi.fn(async () => "ran");
     let n = 0;
     const open = limitsWith(() => (n++ % 2 ? busy("1") : moving()), {
-      timeoutMs: 1500,
+      timeout: 1500,
     });
     slept.length = 0;
     expect(await open.limits.guard({ subject, action: "run" }, work)).toBe(
@@ -171,13 +182,13 @@ describe("an overloaded limiter (`busy`)", () => {
     const closed = limitsWith(() => busy(), { failMode: "closed" });
     await expect(
       closed.limits.guard({ subject, action: "run" }, work),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
   });
 
   it("waits longer, with jitter, the more often it is turned away — inside its bounds", async () => {
     const { limits } = limitsWith(
       () => busy("1"),
-      { timeoutMs: 30_000 },
+      { timeout: 30_000 },
       Math.random,
     );
     slept.length = 0;
@@ -203,7 +214,7 @@ describe("an overloaded limiter (`busy`)", () => {
         if (path.endsWith("/commit") && commits++ < 2) return busy();
         return Response.json({ id: "rsv_1", status: "committed" });
       },
-      { timeoutMs: 10_000 },
+      { timeout: 10_000 },
     );
     await limits.reserve({ subject, action: "run", cost: 2 }, async () => {});
     const sent = calls.filter((c) => c.path.endsWith("/commit"));
@@ -211,7 +222,7 @@ describe("an overloaded limiter (`busy`)", () => {
     expect(new Set(sent.map((c) => c.key)).size).toBe(1);
   });
 
-  it("gives up a commit that stays busy within timeoutMs, and still returns the work's result", async () => {
+  it("gives up a commit that stays busy within timeout, and still returns the work's result", async () => {
     const { limits, calls } = limitsWith(
       (path) =>
         path === "/checks"
@@ -222,7 +233,7 @@ describe("an overloaded limiter (`busy`)", () => {
               },
             })
           : busy("1"),
-      { timeoutMs: 1500 },
+      { timeout: 1500 },
     );
     slept.length = 0;
     expect(
@@ -261,7 +272,7 @@ describe("guard after a check that timed out", () => {
     );
     await expect(
       limits.guard({ subject, action: "run" }, async () => "ran"),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
     await new Promise((r) => setTimeout(r, 400));
     expect(calls.filter((c) => c.path === "/checks")).toHaveLength(1);
   });
@@ -283,10 +294,10 @@ describe("guard", () => {
     const error = await refused
       .guard({ subject, action: "run" }, work)
       .catch((e) => e);
-    expect(error).toBeInstanceOf(LimitReached);
-    expect(error).not.toBeInstanceOf(Unavailable);
+    expect(error).toBeInstanceOf(LimitReachedError);
+    expect(error).not.toBeInstanceOf(UnavailableError);
     expect(error).toMatchObject({
-      name: "LimitReached",
+      name: "LimitReachedError",
       reason: "limit_reached",
       limitId: "lmt_a",
       retryAfterSeconds: 42,
@@ -312,12 +323,12 @@ describe("guard", () => {
     down = true;
     await expect(
       limits.guard({ subject, action: "run" }, work),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
   });
 
   // Every way Limitry may not answer: the limit's fail mode decides —
-  // Unavailable when it fails closed, the work runs when it fails open;
-  // never LimitReached, which only a decision raises.
+  // UnavailableError when it fails closed, the work runs when it fails open;
+  // never LimitReachedError, which only a decision raises.
   const unreachable: [string, () => Response | Promise<Response>][] = [
     [
       "a network error",
@@ -345,12 +356,12 @@ describe("guard", () => {
     ],
   ];
   for (const [what, failure] of unreachable) {
-    it(`treats ${what} as unavailable: closed throws Unavailable, open runs`, async () => {
+    it(`treats ${what} as unavailable: closed throws UnavailableError, open runs`, async () => {
       for (const failMode of ["closed", "open"] as const) {
         let down = false;
         const { limits } = limitsWith(
           () => (down ? failure() : decision(true, failMode)),
-          { timeoutMs: 50 },
+          { timeout: 50 },
         );
         await limits.guard({ subject, action: "run" }, async () => 1);
         down = true;
@@ -359,8 +370,8 @@ describe("guard", () => {
           .guard({ subject, action: "run" }, work)
           .catch((e: unknown) => e);
         if (failMode === "closed") {
-          expect(outcome).toBeInstanceOf(Unavailable);
-          expect(outcome).not.toBeInstanceOf(LimitReached);
+          expect(outcome).toBeInstanceOf(UnavailableError);
+          expect(outcome).not.toBeInstanceOf(LimitReachedError);
           expect(work).not.toHaveBeenCalled();
         } else {
           expect(outcome).toBe("ran");
@@ -383,7 +394,7 @@ describe("guard", () => {
     over = true;
     await expect(
       limits.guard({ subject, action: "run" }, async () => 1),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
     // Never seen a closed limit: open, the work runs.
     const fresh = limitsWith(() =>
       Response.json({ error: { code: "plan_limit_reached" } }, { status: 402 }),
@@ -403,7 +414,7 @@ describe("guard", () => {
 
   it("treats no answer in time as unreachable", async () => {
     const { limits } = limitsWith(() => new Promise<Response>(() => {}), {
-      timeoutMs: 20,
+      timeout: 20,
     });
     expect(
       await limits.guard({ subject, action: "run" }, async () => "ran"),
@@ -417,9 +428,12 @@ describe("guard", () => {
         { status: 400 },
       ),
     );
-    await expect(
-      limits.guard({ subject, action: "" }, async () => 1),
-    ).rejects.toThrow(/refused the check \(400\)/);
+    // The SDK's own error for the status, never a fail mode.
+    const error = await limits
+      .guard({ subject, action: "" }, async () => 1)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BadRequestError);
+    expect(error).toMatchObject({ status: 400, code: "invalid_request" });
   });
 });
 
@@ -490,7 +504,7 @@ describe("reserve", () => {
               },
             });
       },
-      { timeoutMs: 20 },
+      { timeout: 20 },
     );
     const ran = await limits.reserve(
       { subject, action: "run", cost: 2 },
@@ -538,8 +552,8 @@ describe("reserve", () => {
         await reservation.extend(900);
       })
       .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(BadRequestError);
     expect(error).toMatchObject({
-      name: "ApiError",
       status: 400,
       message: "This reservation has expired",
     });
@@ -625,12 +639,12 @@ describe("an open concurrent limit when Limitry can't answer", () => {
       },
     ],
   ] as [string, () => Response | Promise<Response>][]) {
-    it(`runs at most the amount at once after ${what}, and the rest throw Unavailable`, async () => {
+    it(`runs at most the amount at once after ${what}, and the rest throw UnavailableError`, async () => {
       let down = false;
       const { limits } = limitsWith(
         (path) =>
           path !== "/checks" ? settled() : down ? failure() : concurrent(2),
-        { timeoutMs: 50 },
+        { timeout: 50 },
       );
       await limits.reserve({ subject, action: "run" }, async () => 1);
       down = true;
@@ -641,7 +655,7 @@ describe("an open concurrent limit when Limitry can't answer", () => {
           .catch((e: unknown) => e),
       );
       const third = await runs[2];
-      expect(third).toBeInstanceOf(Unavailable);
+      expect(third).toBeInstanceOf(UnavailableError);
       expect(work).toHaveBeenCalledTimes(2);
       open();
       expect(await Promise.all(runs.slice(0, 2))).toEqual(["ran", "ran"]);
@@ -670,7 +684,7 @@ describe("an open concurrent limit when Limitry can't answer", () => {
     await vi.waitFor(() => expect(second.work).toHaveBeenCalled());
     await expect(
       limits.reserve({ subject, action: "run" }, async () => "x"),
-    ).rejects.toBeInstanceOf(Unavailable);
+    ).rejects.toBeInstanceOf(UnavailableError);
     answered.open();
     second.open();
     await Promise.all([first, running]);
@@ -755,7 +769,7 @@ describe("standing", () => {
     const urls: URL[] = [];
     const client = createClient({
       token: "sk_test",
-      api: "https://api.example.test",
+      baseURL: "https://api.example.test",
       fetch: async (request: Request) => {
         urls.push(new URL(request.url));
         return response();
@@ -795,9 +809,8 @@ describe("standing", () => {
         ],
       }),
     ).toEqual(answer);
-    expect(urls[0].pathname).toBe("/v1/usage/standing");
+    expect(urls[0].pathname).toBe("/v1/subjects/user/u1/standing");
     expect(Object.fromEntries(urls[0].searchParams)).toEqual({
-      subject: "user:u1",
       shared: "tenant:acme,team:t1",
     });
   });
@@ -809,7 +822,9 @@ describe("standing", () => {
         { status: 404 },
       ),
     );
-    await expect(limits.standing({ subject })).rejects.toThrow(/404/);
+    await expect(limits.standing({ subject })).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
 
@@ -817,7 +832,7 @@ describe("limitry.guard and limitry.reserve", () => {
   it("sit on the client itself", async () => {
     const limitry = createClient({
       token: "sk_test",
-      api: "https://api.example.test",
+      baseURL: "https://api.example.test",
       fetch: async () => decision(true),
     });
     expect(
@@ -825,5 +840,166 @@ describe("limitry.guard and limitry.reserve", () => {
     ).toBe("done");
     expect(typeof limitry.reserve).toBe("function");
     expect(typeof limitry.limits.list).toBe("function");
+  });
+});
+
+describe("the error tree, per-call options and a caller's signal", () => {
+  const reserved = () =>
+    decision(true, "open", {
+      reservation: { id: "rsv_9", expiresAt: "2026-10-05T00:05:00Z" },
+    });
+
+  it("refuses with LimitReachedError, under the SDK's base error", async () => {
+    const { limits } = limitsWith(() => decision(false));
+    const error = await limits
+      .guard({ subject, action: "run" }, async () => 1)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LimitReachedError);
+    expect(error).toBeInstanceOf(LimitryError);
+    expect(error).toMatchObject({
+      reason: "limit_reached",
+      limitId: "lmt_a",
+      limitName: "A",
+      retryAfterSeconds: 42,
+    });
+  });
+
+  it("says why there was no decision, and keeps what failed", async () => {
+    const plan = limitsWith(() =>
+      Response.json({ error: { code: "plan_limit_reached" } }, { status: 402 }),
+    ).limits;
+    const closed = await plan
+      .guard({ subject, action: "run", failMode: "closed" }, async () => 1)
+      .catch((e: unknown) => e);
+    expect(closed).toBeInstanceOf(UnavailableError);
+    expect(closed).toBeInstanceOf(LimitryError);
+    expect(closed).toMatchObject({ reason: "plan_limit_reached" });
+    // No retries here, so the network error is the answer, not a timeout.
+    const down = createLimits(
+      createClient({
+        token: "sk_test",
+        baseURL: "https://api.example.test",
+        maxRetries: 0,
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      }),
+      { timeout: 1000 },
+    );
+    const error = (await down
+      .guard({ subject, action: "run", failMode: "closed" }, async () => 1)
+      .catch((e: unknown) => e)) as UnavailableError;
+    expect(error.reason).toBe("unreachable");
+    expect(error.cause).toBeInstanceOf(APIConnectionError);
+    const slow = limitsWith(() => new Promise<Response>(() => {}), {
+      timeout: 20,
+    }).limits;
+    expect(
+      await slow
+        .guard({ subject, action: "run", failMode: "closed" }, async () => 1)
+        .catch((e: unknown) => (e as UnavailableError).reason),
+    ).toBe("timeout");
+  });
+
+  it("takes a timeout, a fail mode and an idempotency key per call", async () => {
+    const { limits, calls } = limitsWith(
+      () => new Promise<Response>(() => {}),
+      {
+        timeout: 10_000,
+      },
+    );
+    const started = Date.now();
+    // The call's own 20 ms, not the client's 10 s; its own fail mode.
+    await expect(
+      limits.guard(
+        {
+          subject,
+          action: "run",
+          timeout: 20,
+          failMode: "closed",
+          idempotencyKey: "order-42",
+        },
+        async () => 1,
+      ),
+    ).rejects.toBeInstanceOf(UnavailableError);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(calls[0].key).toBe("order-42");
+  });
+
+  it("a signal ends the check at once: its reason, the work never run, no fail mode", async () => {
+    const { limits } = limitsWith(() => new Promise<Response>(() => {}), {
+      timeout: 10_000,
+    });
+    const controller = new AbortController();
+    const work = vi.fn(async () => "ran");
+    const asked = limits.guard(
+      { subject, action: "run", signal: controller.signal },
+      work,
+    );
+    controller.abort(new Error("the user left"));
+    await expect(asked).rejects.toThrow("the user left");
+    expect(work).not.toHaveBeenCalled();
+    // Already aborted: nothing is sent.
+    const { limits: idle, calls } = limitsWith(() => decision(true));
+    await expect(
+      idle.guard({ subject, action: "run", signal: AbortSignal.abort() }, work),
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a signal ends a wait between tries too", async () => {
+    const client = createClient({
+      token: "sk_test",
+      baseURL: "https://api.example.test",
+      fetch: async () => moving(),
+    });
+    const controller = new AbortController();
+    const limits = createLimits(
+      client,
+      { timeout: 60_000 },
+      {
+        // A real wait, which the abort must cut short.
+        sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+        random: () => 0,
+      },
+    );
+    const asked = limits.guard(
+      { subject, action: "run", signal: controller.signal },
+      async () => 1,
+    );
+    setTimeout(() => controller.abort(new Error("stop")), 50);
+    const started = Date.now();
+    await expect(asked).rejects.toThrow("stop");
+    expect(Date.now() - started).toBeLessThan(900);
+  });
+
+  it("a reserve cancelled mid-check releases what the check reserved, in the background", async () => {
+    let checks = 0;
+    let answer: (r: Response) => void = () => {};
+    const { limits, calls } = limitsWith(
+      (path) => {
+        if (path !== "/checks") return Response.json({ id: "rsv_9" });
+        checks += 1;
+        // The first try hangs (cancelled); the replay finds it reserved.
+        return checks === 1
+          ? new Promise<Response>((done) => (answer = done))
+          : reserved();
+      },
+      { timeout: 10_000 },
+    );
+    const controller = new AbortController();
+    const asked = limits.reserve(
+      { subject, action: "chat", signal: controller.signal },
+      async () => "ran",
+    );
+    controller.abort(new Error("cancelled"));
+    await expect(asked).rejects.toThrow("cancelled");
+    answer(reserved());
+    await vi.waitFor(() =>
+      expect(calls.map((c) => c.path)).toContain("/reservations/rsv_9/release"),
+    );
+    // The replay used the cancelled check's key: nothing counted twice.
+    const tries = calls.filter((c) => c.path === "/checks");
+    expect(tries[1].key).toBe(tries[0].key);
   });
 });

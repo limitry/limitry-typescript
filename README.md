@@ -2,7 +2,7 @@
 
 The Limitry TypeScript SDK puts a limit around costly work in one call: `guard` checks before your code runs, and `reserve` reserves what the work will probably cost, then charges what it actually cost. Every API operation is a typed method too.
 
-[![A $2 AI budget for one of your users: three calls are charged, and the next is refused before the AI runs.](https://media.limitry.com/launch/readme-20261117-1555.gif)](https://limitry.com/#demo)
+[![A $2 AI budget for one of your users: three calls are charged, and the next is refused before the AI runs.](https://media.limitry.com/launch/readme-20261122-0258.gif)](https://limitry.com/#demo)
 
 [▶ Watch the 44-second demo](https://limitry.com/#demo)
 
@@ -31,7 +31,7 @@ import { createClient } from "@limitry/sdk";
 const limitry = createClient(); // reads LIMITRY_API_KEY
 
 const answer = await limitry.reserve(
-  { subject: { kind: "user", id: "usr_123" }, action: "ai-call", cost: 5 },
+  { subject: { kind: "user", id: "user_123" }, action: "ai-call", cost: 5 },
   async (reservation) => {
     const response = await callModel(prompt);
     reservation.cost(priceCents(response.usage)); // your prices, in cents
@@ -50,7 +50,7 @@ then runs your code only if it's allowed. Here it counts one request to
 your API against a limit of 60 a minute for each key:
 
 ```ts
-import { createClient, LimitReached } from "@limitry/sdk";
+import { createClient, LimitReachedError } from "@limitry/sdk";
 
 const limitry = createClient(); // reads LIMITRY_API_KEY
 
@@ -60,15 +60,16 @@ try {
     () => handleRequest(request),
   );
 } catch (error) {
-  if (error instanceof LimitReached) {
+  if (error instanceof LimitReachedError) {
     console.log(`Try again in ${error.retryAfterSeconds} seconds`);
   }
 }
 ```
 
-A refusal throws `LimitReached`. If Limitry can't be reached, each
-limit's fail mode decides: `open` lets the work run, `closed` throws
-`Unavailable`.
+A refusal throws `LimitReachedError`. If Limitry can't answer within
+`timeout` (1.5 seconds by default), each limit's fail mode decides:
+`open` lets the work run, and `closed` throws `UnavailableError`. Both
+errors are a `LimitryError`.
 
 ## Everything else
 
@@ -90,8 +91,9 @@ await limitry.limits.create({
 });
 ```
 
-A failure throws an `ApiError` with the error's `code`, `message`,
-`status` and `requestId`. Writes are retried safely: each sends an
+A failure throws an `APIError` subclass for its status, such as
+`NotFoundError`, with the error's `code`, `message`, `status` and
+`requestId`. Writes are retried safely: each sends an
 idempotency key, so a retried request happens once.
 
 ## Links

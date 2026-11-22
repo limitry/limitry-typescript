@@ -8,11 +8,13 @@
  * dependency: Web Crypto, so it runs in Node, Workers, Deno and browsers.
  */
 
+import { SdkError } from "./errors.ts";
+
 /** The event a delivery carries. */
 export type WebhookEvent = {
   /** The event's id (`evt_…`), the same in every delivery of it: dedupe on it. */
   id: string;
-  /** What happened, such as `member.joined`. */
+  /** What happened, such as `workspace.member.joined`. */
   type: string;
   createdAt: string;
   data: Record<string, unknown>;
@@ -20,10 +22,9 @@ export type WebhookEvent = {
 };
 
 /** A delivery that failed verification: not from us, altered, or too old. */
-export class WebhookVerificationError extends Error {
+export class WebhookVerificationError extends SdkError {
   constructor(message: string) {
     super(message);
-    this.name = "WebhookVerificationError";
   }
 }
 

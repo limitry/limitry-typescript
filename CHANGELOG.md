@@ -2,6 +2,86 @@
 
 What changed in the Limitry TypeScript SDK (`@limitry/sdk`). Generated from the source on each release; newest first.
 
+## 1.0.0-rc.18 (2026-11-22)
+
+### Added
+
+- Every Python SDK method now takes `timeout=` in seconds, for example
+  `client.workspace.get(timeout=5)`. It limits each attempt, and a
+  timed-out attempt is retried with the same idempotency key. For several
+  calls, `client.with_options(timeout=5, max_retries=0)` gives the same
+  client with other settings.
+
+  To limit a whole async call, retries included, wrap it in
+  `asyncio.timeout()`. The call stops at once, even while it waits to
+  retry.
+
+  An `ApiError` now carries the response's `headers`, so you can read
+  `Retry-After` and the rate-limit headers when a call fails.
+
+### Changed
+
+- The TypeScript SDK's errors are now a class per kind of failure. When
+  the API refuses a call, it throws an `APIError` subclass for the
+  status, such as `NotFoundError` or `RateLimitError`. Each one carries
+  `details`, what is wrong with each field, and `docs`, a link to the
+  error. When the API can't be reached, it throws an
+  `APIConnectionError`, or an `APITimeoutError` when every attempt timed
+  out. Every error the SDK throws shares one base class, named after the
+  product. `ApiError` is now `APIError`.
+
+  A list method can now page for you. `await` it for the first page,
+  with `hasNextPage()` and `getNextPage()`. Use `for await` to go through
+  every item of every page.
+
+  `createClient` takes `baseURL` instead of `api`, and reads
+  `<NAME>_BASE_URL` when you don't pass it. It also takes
+  `defaultHeaders`, sent with every request. Outside a browser, requests
+  name the SDK in their `User-Agent`.
+
+  When the API asks the SDK to wait before retrying, it now waits up to
+  60 seconds, up from 20.
+- The API, both SDKs and the CLI now each follow their own language's conventions, so some names and paths changed.
+
+  In the API:
+
+  - `GET /v1/checks` lists recent checks and takes `before`. It replaces `GET /v1/checks/recent`.
+  - `GET /v1/subjects/{kind}/{id}/standing` shows where a subject stands. It replaces `GET /v1/usage/standing`.
+  - `PATCH /v1/subjects/{kind}/{id}` sets a subject's billing date, name and labels. `DELETE /v1/subjects/{kind}/{id}/names` erases the name and labels, and answers `204`.
+  - A check's decision has no `id`. Its limits name themselves in `limitName`, its `reason` is `{ code, limitId, limitName, subject, message }`, and `reservation` is `null` when there is none.
+  - A recent check's time is `checkedAt`, and `refusedBy` names the limit and the subject.
+  - A subject's billing date is `billingAnchorAt`, and a period's start is `periodStart`, in reports and in the `limit.reached` and `limit.threshold_crossed` webhooks. Those webhooks name the limit in `limitName`.
+  - `GET /v1/usage/subjects` takes `top` and answers `subjects`.
+  - A sync takes and answers `dryRun` in place of `preview`.
+  - Archiving a limit answers `200` with the limit.
+  - A clash with a resource's state answers `409` with the code `conflict`, such as a name that is taken or a limit a sync set. A check that Limitry can't answer right now gets `503` with the code `unavailable` and a `Retry-After` header.
+
+  In the TypeScript SDK:
+
+  - `guard` and `reserve` throw `LimitReachedError` when refused, and `UnavailableError` when Limitry gave no answer and a limit fails closed. Its `reason` says why. Both are `LimitryError`s.
+  - `createLimits` takes `timeout`, in milliseconds, in place of `timeoutMs`.
+  - Each `guard` or `reserve` call also takes `timeout`, `failMode`, `signal` and `idempotencyKey`. A signal stops the check at once, and the work doesn't run.
+
+  In the Python SDK:
+
+  - `guard` and `reserve` raise `LimitReachedError` and `UnavailableError`, under `LimitryError`.
+  - They take `timeout=` (in seconds), `fail_mode=`, `idempotency_key=` and `extra_headers=`.
+  - You set what the work used with `reservation.cost = 7`.
+  - Cancelling an async `guard` or `reserve` stops its check at once.
+
+  In the CLI:
+
+  - `limitry sync --dry-run` replaces `--preview`, and `limitry sync -` reads the file from standard input.
+  - A refused `limitry check` exits with code `5`.
+  - `limitry subjects standing <kind> <id>` replaces `limitry usage standing`, and `limitry checks list` replaces `limitry checks recent`.
+  - `limitry subjects update <kind> <id>` sets a name and labels, and `limitry subjects names delete <kind> <id>` erases them.
+
+  The audit log's Limitry actions are dotted too, such as `subject.billing_date.set` and `limits.copied`. Earlier entries show the new names.
+- A TypeScript SDK call's `timeout` now limits each attempt, as in other
+  API SDKs, and defaults to 60 seconds. A timed-out attempt is retried
+  with the same idempotency key. To limit a whole call, retries included,
+  pass `signal: AbortSignal.timeout(ms)`.
+
 ## 1.0.0-rc.17 (2026-11-22)
 
 ### Added

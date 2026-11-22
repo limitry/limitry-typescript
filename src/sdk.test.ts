@@ -3,15 +3,24 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import {
   API_KEY_ENV,
-  ApiError,
-  DEFAULT_API,
+  APIError,
+  BASE_URL_ENV,
+  PermissionDeniedError,
+  USER_AGENT,
+  VERSION,
+  DEFAULT_BASE_URL,
   TOKEN_ENV,
   createClient,
   unwrap,
   type Schemas,
 } from "./index.ts";
 
-const workspace: Schemas["Workspace"] = { id: "w1", name: "Acme" };
+const workspace: Schemas["Workspace"] = {
+  id: "w1",
+  name: "Acme",
+  slug: "acme",
+  createdAt: "2026-11-22T00:00:00.000Z",
+};
 
 function fakeFetch(handler: (request: Request) => Response) {
   const requests: Request[] = [];
@@ -61,8 +70,8 @@ describe("createClient", () => {
     const { data } = await api.GET("/workspace");
     expect(data).toEqual(workspace);
     expectTypeOf(data).toEqualTypeOf<Schemas["Workspace"] | undefined>();
-    expect(DEFAULT_API).toBe(`https://api.${brand.domain}`);
-    expect(requests[0].url).toBe(`${DEFAULT_API}/v1/workspace`);
+    expect(DEFAULT_BASE_URL).toBe(`https://api.${brand.domain}`);
+    expect(requests[0].url).toBe(`${DEFAULT_BASE_URL}/v1/workspace`);
     expect(requests[0].headers.get("authorization")).toBe("Bearer sk_x");
     expect(requests[0].headers.get("x-workspace")).toBe("acme");
   });
@@ -72,7 +81,7 @@ describe("createClient", () => {
     const api = createClient({
       token: "pat_x",
       workspace: "acme",
-      api: "http://localhost:8787/",
+      baseURL: "http://localhost:8787/",
       fetch,
     });
     await api.GET("/workspace", { headers: { "x-workspace": "beta" } });
@@ -82,6 +91,31 @@ describe("createClient", () => {
     const bare = createClient({ token: "pat_x", fetch });
     await bare.GET("/user/me");
     expect(requests[1].headers.has("x-workspace")).toBe(false);
+  });
+
+  it("reads <NAME>_BASE_URL when baseURL is not passed", async () => {
+    const { fetch, requests } = fakeFetch(() => Response.json(workspace));
+    vi.stubEnv(BASE_URL_ENV, "http://localhost:9000");
+    await createClient({ token: "sk_x", fetch }).GET("/workspace");
+    expect(requests[0].url).toBe("http://localhost:9000/v1/workspace");
+    await createClient({ token: "sk_x", fetch, baseURL: "http://b" }).GET(
+      "/workspace",
+    );
+    expect(requests[1].url).toBe("http://b/v1/workspace");
+  });
+
+  it("sends defaultHeaders and its User-Agent, a call's own headers winning", async () => {
+    const { fetch, requests } = fakeFetch(() => Response.json(workspace));
+    const api = createClient({
+      token: "sk_x",
+      fetch,
+      defaultHeaders: { "x-team": "core", "x-trace": "a" },
+    });
+    await api.workspace.get({ headers: { "x-trace": "b" } });
+    expect(requests[0].headers.get("x-team")).toBe("core");
+    expect(requests[0].headers.get("x-trace")).toBe("b");
+    expect(USER_AGENT).toBe(`${brand.name}-node/${VERSION}`);
+    expect(requests[0].headers.get("user-agent")).toBe(USER_AGENT);
   });
 
   it("sends X-Environment only when an environment is given (a call may name its own)", async () => {
@@ -103,7 +137,7 @@ describe("createClient", () => {
     expect(requests[2].headers.has("x-environment")).toBe(false);
   });
 
-  it("unwrap returns data, or throws an ApiError carrying the envelope", async () => {
+  it("unwrap returns data, or throws an APIError (a subclass per status) carrying the envelope", async () => {
     const { fetch } = fakeFetch((request) =>
       request.url.endsWith("/workspace")
         ? Response.json(workspace)
@@ -128,8 +162,9 @@ describe("createClient", () => {
     } catch (error) {
       thrown = error;
     }
-    expect(thrown).toBeInstanceOf(ApiError);
-    const apiError = thrown as ApiError;
+    expect(thrown).toBeInstanceOf(PermissionDeniedError);
+    expect(thrown).toBeInstanceOf(APIError);
+    const apiError = thrown as APIError;
     expect(apiError.status).toBe(403);
     expect(apiError.code).toBe("forbidden");
     expect(apiError.message).toBe("Not a member");
