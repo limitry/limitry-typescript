@@ -106,7 +106,7 @@ export class BadRequestError extends APIError {}
 export class AuthenticationError extends APIError {}
 /** 402: the plan's limit is reached. */
 export class PlanLimitError extends APIError {}
-/** 403: the credential may not do this. */
+/** 403: the credential may not do this, or its workspace is suspended (`code` is `workspace_suspended`). */
 export class PermissionDeniedError extends APIError {}
 /** 404: nothing is at this path, or nothing you can see. */
 export class NotFoundError extends APIError {}

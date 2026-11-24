@@ -41,7 +41,7 @@ export interface paths {
         put?: never;
         /**
          * Create a limit
-         * @description Creates a limit on how much a subject may use per window, such as 200 cents a month for every `user`. You only need to send `subject.kind`, `amount` and `window`. `action` defaults to every action (`*`), `unit` to units, and `name` to the sentence the limit reads as. The next check enforces the new limit. You can't change a limit's subject, action, unit, window, every, start or rolling after you create it. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Creates a limit on how much a subject may use per window, such as 200 cents a month for every `user`. You only need to send `subject.kind`, `amount` and `window`. `action` defaults to every action (`*`), `unit` to units, and `name` to the sentence the limit reads as. The next check enforces the new limit. You can't change a limit's subject, action, unit, window, every, start or rolling after you create it. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["limits.create"];
         delete?: never;
@@ -69,7 +69,7 @@ export interface paths {
         head?: never;
         /**
          * Change a limit
-         * @description Changes a limit's name, amount, fail mode or whether it's enabled. Checks use the new rule at once. You can't change a limit's subject, action, unit, window, every, start or rolling, and a request that tries gets a 400. To count something different, create a new limit and archive this one. A limit a sync sets (its `setIn`) changes only through the sync. A request to change one gets a 409 that names where the sync came from, unless it sends `override` with a reason. An override lasts until the next sync. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Changes a limit's name, amount, fail mode or whether it's enabled. Checks use the new rule at once. You can't change a limit's subject, action, unit, window, every, start or rolling, and a request that tries gets a 400. To count something different, create a new limit and archive this one. A limit a sync sets (its `setIn`) changes only through the sync. A request to change one gets a 409 that names where the sync came from, unless it sends `override` with a reason. An override lasts until the next sync. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         patch: operations["limits.update"];
         trace?: never;
@@ -85,7 +85,7 @@ export interface paths {
         put?: never;
         /**
          * Archive a limit
-         * @description Archives a limit, so checks stop enforcing it at once and it leaves the list. Archiving erases nothing. Limitry keeps the limit's usage history and credits, and `POST /v1/limits/{limitId}/restore` brings it back. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Archives a limit, so checks stop enforcing it at once and it leaves the list. Archiving erases nothing. Limitry keeps the limit's usage history and credits, and `POST /v1/limits/{limitId}/restore` brings it back. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["limits.archive"];
         delete?: never;
@@ -109,7 +109,7 @@ export interface paths {
         put?: never;
         /**
          * Add credits to a balance
-         * @description Adds `amount` credits to one subject's balance, on a limit whose window is `total`. A negative `amount` takes credits back, such as after a refund or a chargeback, and needs a `note` saying why. The balance can go below zero, and Limitry then refuses checks until you add more credits. Owners, admins and workspace API keys can add credits. An agent connected through MCP asks a person instead, through the `limit.credit` approval. Limitry keeps a credit's `Idempotency-Key` forever, so never reuse one for a new credit.
+         * @description Adds `amount` credits for one subject on a limit. On a balance, a limit whose window is `total`, the credits stay until they're spent. On a limit that resets, such as one with a `month` window, the credits top up the subject's current period and end when it resets. That period follows the subject's billing date when the limit starts there, and the answer's `periodEnd` says when it ends. A rolling or concurrent limit can't take credits. A negative `amount` takes credits back, such as after a refund or a chargeback, and needs a `note` saying why. The balance can go below zero, and Limitry then refuses checks until you add more credits. With a personal access token, the owner and admins can add credits. Members can add them in test only. A workspace API key with this scope can add them too. An agent connected through MCP asks a person instead, through the `limit.credit` approval. Limitry keeps a credit's `Idempotency-Key` forever, so never reuse one for a new credit.
          */
         post: operations["limits.credits.create"];
         delete?: never;
@@ -149,7 +149,7 @@ export interface paths {
         put?: never;
         /**
          * Restore an archived limit
-         * @description Brings an archived limit back. Checks enforce it again if it's enabled. The API refuses it while an active limit has the same name. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Brings an archived limit back. Checks enforce it again if it's enabled. The API refuses it while an active limit has the same name. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["limits.restore"];
         delete?: never;
@@ -169,7 +169,7 @@ export interface paths {
         put?: never;
         /**
          * Sync limits from a list
-         * @description Makes the environment's limits match the list in `limits`, pairing them up by name. It creates the limits that are missing and changes the ones that differ, where an omitted field means its default. With `archiveMissing`, it also archives the active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list before writing anything. If any entry has a problem, nothing changes, and the 400 lists each problem in `details`. Otherwise Limitry writes every change at once. You can't change a limit's subject, action, unit, window, every, start or rolling under the same name, so rename the entry to do that. With `dryRun`, it returns what it would do without writing anything. What a sync sets is locked in the app until the next sync, which names its `source`. This is the call behind `limitry sync`, for keeping your limits in a file in your repository. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Makes the environment's limits match the list in `limits`, pairing them up by name. It creates the limits that are missing and changes the ones that differ, where an omitted field means its default. With `archiveMissing`, it also archives the active limits the list doesn't name. Running it twice changes nothing the second time. Limitry checks the whole list before writing anything. If any entry has a problem, nothing changes, and the 400 lists each problem in `details`. Otherwise Limitry writes every change at once. You can't change a limit's subject, action, unit, window, every, start or rolling under the same name, so rename the entry to do that. With `dryRun`, it returns what it would do without writing anything. What a sync sets is locked in the app until the next sync, which names its `source`. This is the call behind `limitry sync`, for keeping your limits in a file in your repository. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["limits.sync"];
         delete?: never;
@@ -297,7 +297,7 @@ export interface paths {
         head?: never;
         /**
          * Update a subject
-         * @description Sets a subject's billing date, its name, its labels, or any of them. A field you leave out stays as it is, and null clears a name or labels. Labels you send replace the subject's labels. The billing date is the moment the subject's `billing_date` limits count their periods from, usually the subscription's start, set from your billing system's webhook. The subject's allowance then resets on its own billing day, and a monthly limit still resets monthly on an annual plan. A name and labels are optional, and checks never need them. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Sets a subject's billing date, its name, its labels, or any of them. A field you leave out stays as it is, and null clears a name or labels. Labels you send replace the subject's labels. The billing date is the moment the subject's `billing_date` limits count their periods from, usually the subscription's start, set from your billing system's webhook. The subject's allowance then resets on its own billing day, and a monthly limit still resets monthly on an annual plan. A name and labels are optional, and checks never need them. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         patch: operations["subjects.update"];
         trace?: never;
@@ -314,7 +314,7 @@ export interface paths {
         post?: never;
         /**
          * Erase a subject's name and labels
-         * @description Erases the name and labels you gave a subject. Its limits, usage and billing date stay, because they're kept by its ID. Use it when one of your users asks you to delete their data. Erasing a subject with no name or labels succeeds too. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Erases the name and labels you gave a subject. Its limits, usage and billing date stay, because they're kept by its ID. Use it when one of your users asks you to delete their data. Erasing a subject with no name or labels succeeds too. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         delete: operations["subjects.names.delete"];
         options?: never;
@@ -333,7 +333,7 @@ export interface paths {
         put?: never;
         /**
          * Reset a subject's limits
-         * @description Resets one limit on a subject now, or every limit on it. Send `limitId` for one limit, or `{}` for all of them. Use it for goodwill, a promotion or support. The schedule doesn't move, so the next reset still happens when it normally would. A balance goes back to its amount, and the reset skips concurrent limits. With an Idempotency-Key, a repeated request resets only once. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Resets one limit on a subject now, or every limit on it. Send `limitId` for one limit, or `{}` for all of them. Use it for goodwill, a promotion or support. The schedule doesn't move, so the next reset still happens when it normally would. A balance goes back to its amount, and the reset skips concurrent limits. With an Idempotency-Key, a repeated request resets only once. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["subjects.reset"];
         delete?: never;
@@ -373,7 +373,7 @@ export interface paths {
         put?: never;
         /**
          * Name many subjects
-         * @description Sets the name and labels of up to 1,000 subjects at once, such as when you first connect your user list. Each item works like updating that subject's name and labels: a field you leave out stays as it is, and null clears it. Limitry checks every item before it saves any, so a bad item saves nothing. With a personal access token, only owners and admins can call this. A workspace API key with this scope can.
+         * @description Sets the name and labels of up to 1,000 subjects at once, such as when you first connect your user list. Each item works like updating that subject's name and labels: a field you leave out stays as it is, and null clears it. Limitry checks every item before it saves any, so a bad item saves nothing. With a personal access token, the owner and admins can call this. Members can call it in test only, and guests can't. A workspace API key with this scope can.
          */
         post: operations["subjects.import"];
         delete?: never;
@@ -411,7 +411,7 @@ export interface paths {
         };
         /**
          * Get every limit's usage at once
-         * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance also lists the credits added to it in the range. The current window is whole on every plan. A past range reaches no further back than your plan's history.
+         * @description Returns every active limit's usage in one answer, for a question that names no limit. Each limit comes with its name, unit, amount and window, its `total` (units used, checks allowed and refused) and its top subjects. By default, it covers each limit's current window, with exact amounts. For a past range, send `period`, such as `last_month`, or `from` and `to`. The totals and subjects then come from history, and each subject's `remaining` is null. Set `sort` to `refused` to list only the subjects each limit refused, the most refused first. A balance lists the credits added to it, and a limit that resets lists its top-ups. The current window is whole on every plan. A past range reaches no further back than your plan's history.
          */
         get: operations["usage.overview"];
         put?: never;
@@ -1072,7 +1072,7 @@ export interface components {
                  * @example 2026-11-06T12:05:00.000Z
                  */
                 expiresAt: string;
-                /** @example rsv_WyJ1c2VyIiwidXNyXzEyMyJd_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
+                /** @example rsv_WyJ1c2VyIiwidXNlcl8xMjMiXQ_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
                 id: string;
             } | null;
             /**
@@ -1183,7 +1183,7 @@ export interface components {
             amount: number;
             /**
              * Format: date-time
-             * @example 2026-10-01T09:00:00.000Z
+             * @example 2026-11-05T09:00:00.000Z
              */
             createdAt: string;
             /**
@@ -1200,6 +1200,18 @@ export interface components {
              * @example October credits
              */
             note: string | null;
+            /**
+             * Format: date-time
+             * @description On a limit that resets, when that period ends, and the credits with it. Null on a balance.
+             * @example 2026-12-01T00:00:00.000Z
+             */
+            periodEnd: string | null;
+            /**
+             * Format: date-time
+             * @description On a limit that resets, when the period these credits went to began. Null on a balance.
+             * @example 2026-11-01T00:00:00.000Z
+             */
+            periodStart: string | null;
             subject: components["schemas"]["SubjectRef"];
         };
         CreditInput: {
@@ -1209,7 +1221,7 @@ export interface components {
              */
             amount: number;
             /**
-             * @description Why the balance changed. It's required when `amount` is negative.
+             * @description Why you added or took back credits. It's required when `amount` is negative.
              * @example October credits
              */
             note?: string;
@@ -1693,6 +1705,30 @@ export interface components {
              */
             name: string | null;
         };
+        PlanLimitEnvelope: {
+            error: {
+                /** @example plan_limit_reached */
+                code: string;
+                details?: {
+                    message: string;
+                    path: string;
+                }[];
+                /**
+                 * @description A link to this error code's entry in the documentation, which says how to fix it.
+                 * @example https://example.com/docs/errors/#unauthorized
+                 */
+                docs?: string;
+                /** @example This workspace has reached its monthly spend cap on extra checks (1,475,000 checks, 500,000 in its plan). Decisions resume when an owner raises the cap or the month resets. Each limit's fail mode applies meanwhile. */
+                message: string;
+                /**
+                 * @description `spend_cap` when the workspace's extra checks reached its monthly spend cap. Absent when it's past its plan's allowance.
+                 * @example spend_cap
+                 * @enum {string}
+                 */
+                reason?: "spend_cap";
+                requestId?: string;
+            };
+        };
         PlanUsage: {
             counts: components["schemas"]["PlanUsageCount"][];
             /**
@@ -1713,11 +1749,11 @@ export interface components {
              */
             periodStart: string;
             /**
-             * @description Where the workspace stands, from its most limited count. The order from worst is `stopped`, `grace`, `over`, then `within`.
+             * @description Where the workspace stands, from its most limited count. The order from worst is `stopped`, `grace`, `over`, `overage`, then `within`.
              * @example grace
              * @enum {string}
              */
-            state: "within" | "grace" | "stopped" | "over";
+            state: "within" | "overage" | "grace" | "stopped" | "over";
         };
         PlanUsageCount: {
             /** @example Webhook deliveries this period */
@@ -1734,12 +1770,13 @@ export interface components {
              * @example 10000
              */
             limit: number | null;
+            overage?: components["schemas"]["PlanUsageOverage"];
             /**
-             * @description Where the count stands. `within` is under the limit. `grace` is past the limit, still running until `stopsAt`. `stopped` means we refuse new use until `periodEnd`. `over` is past the limit of a count we never refuse.
+             * @description Where the count stands. `within` is under the limit. `overage` is past the limit, with the extras billed until `stopsAt`, your spend cap. `grace` is past the limit, still running until `stopsAt`. `stopped` means we refuse new use until `periodEnd`. `over` is past the limit of a count we never refuse.
              * @example grace
              * @enum {string}
              */
-            state: "within" | "grace" | "stopped" | "over";
+            state: "within" | "overage" | "grace" | "stopped" | "over";
             /**
              * @description Where we start refusing new use until the period resets. It equals `limit` when the count stops at its limit. It is higher when the count keeps running for a while past it. Null means we never refuse it.
              * @example 11000
@@ -1753,6 +1790,44 @@ export interface components {
             /** @example 10400 */
             used: number;
         };
+        /** @description Set when your plan bills extras past `limit`, up to a spend cap. Absent otherwise. */
+        PlanUsageOverage: {
+            /**
+             * @description Your spend cap for the extras, in US cents a month. At the cap, we refuse new use until the period resets.
+             * @example 3900
+             */
+            capCents: number;
+            /**
+             * @description True while no one has changed the spend cap.
+             * @example true
+             */
+            capIsDefault: boolean;
+            /**
+             * @description What the extras cost so far, in US cents. You pay for them with the next monthly invoice.
+             * @example 2800
+             */
+            costCents: number;
+            /**
+             * @description The spend cap your plan starts with, in US cents a month.
+             * @example 3900
+             */
+            defaultCapCents: number;
+            /**
+             * @description How far past `limit` the count went this period. It stops growing at the spend cap.
+             * @example 700000
+             */
+            extraUnits: number;
+            /**
+             * @description What the extras are called.
+             * @example Extra checks
+             */
+            label: string;
+            /**
+             * @description What the extras cost on your plan.
+             * @example $40 per million checks
+             */
+            rate: string;
+        };
         Reservation: {
             /**
              * @description What the reservation finally used: the committed cost, or 0 if you released it.
@@ -1764,7 +1839,7 @@ export interface components {
              * @example 2026-11-06T12:05:00.000Z
              */
             expiresAt: string;
-            /** @example rsv_WyJ1c2VyIiwidXNyXzEyMyJd_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
+            /** @example rsv_WyJ1c2VyIiwidXNlcl8xMjMiXQ_9f2c4e1a7b3d4c8e9a0f1b2c3d4e5f6a */
             id: string;
             /**
              * @description The amount reserved.
@@ -1797,6 +1872,11 @@ export interface components {
             action: string;
             /** @example 200 */
             amount: number;
+            /**
+             * @description On a limit that resets, the credits added to this period (top-ups). They're already in `remaining`, so the period allows `amount` plus `credited`. 0 on a balance.
+             * @example 0
+             */
+            credited: number;
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
             /** @example AI budget */
@@ -1842,7 +1922,7 @@ export interface components {
             };
             /**
              * @description The subject's name, if you gave it one. Names are optional, and they don't have to be unique.
-             * @example Design team
+             * @example Sara Khan
              */
             name: string | null;
             subject: components["schemas"]["SubjectRef"];
@@ -1850,6 +1930,11 @@ export interface components {
         SubjectBudget: {
             /** @example 200 */
             amount: number;
+            /**
+             * @description On a limit that resets, the credits added to this period (top-ups). They're already in `remaining`, so the period allows `amount` plus `credited`. 0 on a balance.
+             * @example 0
+             */
+            credited: number;
             /** @example lmt_6f1c2a9e-4b7d-4e3a-9c5f-8d2b1a0e7c34 */
             limitId: string;
             /** @example AI budget */
@@ -1913,7 +1998,7 @@ export interface components {
         SubjectImportResult: {
             /**
              * @description How many subjects were updated.
-             * @example 2
+             * @example 1
              */
             imported: number;
         };
@@ -1972,7 +2057,7 @@ export interface components {
              * @example 2026-11-21T14:00:00.000Z
              */
             lastCheckedAt: string | null;
-            /** @example Design team */
+            /** @example Sara Khan */
             name: string | null;
             subject: components["schemas"]["SubjectRef"];
         };
@@ -2126,7 +2211,7 @@ export interface components {
                  * @example 200
                  */
                 amount: number;
-                /** @description For a balance (window `total`): the credits added and taken back in the range, and the latest of them, newest first. Without a range, every credit counts. Null for other limits. */
+                /** @description The credits added and taken back in the range, and the latest of them, newest first. On a balance (window `total`), every credit counts when you send no range. On a limit that resets, they're the top-ups in the current window or the range, or null when there were none. Null for rolling and concurrent limits. */
                 credits: {
                     /**
                      * @description The credits added in the range.
@@ -2252,7 +2337,7 @@ export interface components {
                 refused: number;
                 /**
                  * @description When the bucket starts.
-                 * @example 2026-11-05T00:00:00.000Z
+                 * @example 2026-10-05T00:00:00.000Z
                  */
                 start: string;
                 /**
@@ -2501,7 +2586,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2525,6 +2610,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                /** @description A key you choose for this check. A retry with the same key gets the same decision for an hour and counts only once. A different check with the same key gets 409 (code: idempotency_key_reused). */
+                "idempotency-key"?: string;
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
                 /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
@@ -2566,16 +2653,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Limitry makes no decision because the workspace is past its plan's allowance (code: plan_limit_reached). With a live key, the workspace is more than 10% past its plan's monthly allowed checks. With a test key, it has used up the month's test checks, which have no grace. Apply the limit's fail mode, as you would when your code can't reach Limitry. The SDKs do this for you. */
+            /** @description Limitry makes no decision because the workspace is past where its plan stops (code: plan_limit_reached). With a live key on Free, or on a plan without extra checks, the workspace is more than 10% past its plan's monthly allowed checks. With a live key on Pro or Business, its extra checks have reached the workspace's monthly spend cap, and `reason` is `spend_cap`. With a test key, it has used up the month's test checks, which have no grace. Apply the limit's fail mode, as you would when your code can't reach Limitry. The SDKs do this for you. */
             402: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["PlanLimitEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2602,7 +2689,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            /** @description Too many requests (code: rate_limited). With an API key, checks have no request quota. If a key keeps getting refused for many different subjects, its checks get this error for a few seconds. With a personal access token or an agent sign-in, the limit is 100 requests a minute. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -2674,7 +2761,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2741,7 +2828,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2814,7 +2901,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2891,7 +2978,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2973,7 +3060,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2984,6 +3071,15 @@ export interface operations {
             };
             /** @description This workspace has no such limit (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description A sync sets this limit (code: conflict). Remove it from the sync's source, then sync with `archiveMissing`. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3055,7 +3151,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3088,6 +3184,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                /** @description A key you choose for this credit. A retry with the same key adds the credit only once. Limitry keeps the key forever, so never reuse one for a new credit. */
+                "idempotency-key"?: string;
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
                 /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
@@ -3105,7 +3203,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The credit, now applied to the balance. */
+            /** @description The credit, now applied to the balance or the current period. */
             201: {
                 headers: {
                     /** @description The path of the new resource, under `/v1`. */
@@ -3116,7 +3214,7 @@ export interface operations {
                     "application/json": components["schemas"]["Credit"];
                 };
             };
-            /** @description The API can't add these credits (code: invalid_request). This happens when the limit isn't a balance (its window isn't `total`), is for another subject kind or is archived. It also happens when the amount is 0, out of range, or negative without a `note`. */
+            /** @description The API can't add these credits (code: invalid_request). This happens when the limit is rolling or concurrent, is for another subject kind or is archived. It happens when the subject's period hasn't started yet, on a limit whose period starts at first use. It also happens when the amount is 0, out of range, or negative without a `note`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3134,7 +3232,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3161,7 +3259,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). The code `moving` means the subject is moving between Limitry's servers for a few seconds. Retry after the number of seconds in the Retry-After header. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3217,7 +3315,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3290,7 +3388,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3301,6 +3399,15 @@ export interface operations {
             };
             /** @description This workspace has no such limit (code: not_found). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description A sync sets this limit, so only the sync can change it (code: conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3364,7 +3471,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3427,7 +3534,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3469,6 +3576,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                /** @description A key you choose for this commit. It's safe to retry a commit without one, since repeating it returns the same result. */
+                "idempotency-key"?: string;
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
                 /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
@@ -3512,7 +3621,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3539,7 +3648,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            /** @description Too many requests (code: rate_limited). With an API key, commits, releases and extends aren't rate limited. With a personal access token or an agent sign-in, the limit is 100 requests a minute. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -3606,7 +3715,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3633,7 +3742,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            /** @description Too many requests (code: rate_limited). With an API key, commits, releases and extends aren't rate limited. With a personal access token or an agent sign-in, the limit is 100 requests a minute. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -3657,6 +3766,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                /** @description A key you choose for this release. It's safe to retry a release without one, since repeating it returns the same result. */
+                "idempotency-key"?: string;
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
                 /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
@@ -3696,7 +3807,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3723,7 +3834,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Too many requests (code: rate_limited). The limit is 100 requests a minute for each API key, personal access token or agent sign-in. Retry after the number of seconds in the Retry-After header. */
+            /** @description Too many requests (code: rate_limited). With an API key, commits, releases and extends aren't rate limited. With a personal access token or an agent sign-in, the limit is 100 requests a minute. Retry after the number of seconds in the Retry-After header. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -3795,7 +3906,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3859,7 +3970,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3895,7 +4006,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). The code `moving` means the subject is moving between Limitry's servers for a few seconds. Retry after the number of seconds in the Retry-After header. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -3954,7 +4065,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3990,7 +4101,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). The code `moving` means the subject is moving between Limitry's servers for a few seconds. Retry after the number of seconds in the Retry-After header. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4043,7 +4154,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4085,6 +4196,8 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                /** @description A key you choose for this reset. A repeated request with the same key resets only once. */
+                "idempotency-key"?: string;
                 /** @description The environment the request acts in. Without it, the request uses the product's default environment. An API key bound to an environment always acts in that environment, and naming another one fails with 403. An unknown environment fails with 400. */
                 "x-environment"?: string;
                 /** @description The workspace slug. A personal access token must send it, or the request fails with 400. API keys ignore it. */
@@ -4129,7 +4242,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4165,7 +4278,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). The code `moving` means the subject is moving between Limitry's servers for a few seconds. Retry after the number of seconds in the Retry-After header. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4223,7 +4336,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4241,7 +4354,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). */
+            /** @description Checks are unavailable for now (code: unavailable, with Retry-After). The code `moving` means the subject is moving between Limitry's servers for a few seconds. Retry after the number of seconds in the Retry-After header. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4297,7 +4410,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4391,7 +4504,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4472,7 +4585,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4566,7 +4679,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4631,7 +4744,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4685,7 +4798,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4746,7 +4859,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4798,7 +4911,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4888,7 +5001,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4943,7 +5056,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5016,7 +5129,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5106,7 +5219,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5158,7 +5271,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5224,7 +5337,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5290,7 +5403,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5342,7 +5455,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5408,7 +5521,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5460,7 +5573,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5542,7 +5655,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5596,7 +5709,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5657,7 +5770,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5748,7 +5861,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5829,7 +5942,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5902,7 +6015,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5974,7 +6087,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -6046,7 +6159,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. */
+            /** @description The credential can't make this request (code: forbidden). An API key or token without this route's scope gets this error. So does a personal access token that lacks the workspace role the route requires, or that can't act in the named workspace. A token can't act in a workspace whose slug is unknown, that its user isn't a member of, or that its scopes exclude. A suspended workspace gets 403 with code workspace_suspended on every request until staff lift the suspension. */
             403: {
                 headers: {
                     [name: string]: unknown;

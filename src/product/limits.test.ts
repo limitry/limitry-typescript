@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   APIConnectionError,
   BadRequestError,
+  PermissionDeniedError,
   createClient,
   LimitryError,
   NotFoundError,
@@ -434,6 +435,44 @@ describe("guard", () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BadRequestError);
     expect(error).toMatchObject({ status: 400, code: "invalid_request" });
+  });
+
+  it("never fails open for a suspended workspace: guard and reserve throw it", async () => {
+    // Staff suspended the workspace (403 workspace_suspended): Limitry
+    // answered, so no fail mode applies, even after an open decision.
+    const suspended = () =>
+      Response.json(
+        {
+          error: {
+            code: "workspace_suspended",
+            message: "This workspace is suspended.",
+          },
+        },
+        { status: 403 },
+      );
+    let answer: () => Response = () => decision(true, "open");
+    const { limits } = limitsWith(() => answer());
+    await limits.guard({ subject, action: "run" }, async () => 1);
+    answer = suspended;
+    let ran = false;
+    for (const call of [
+      () =>
+        limits.guard({ subject, action: "run" }, async () => {
+          ran = true;
+        }),
+      () =>
+        limits.reserve({ subject, action: "run", cost: 1 }, async () => {
+          ran = true;
+        }),
+    ]) {
+      const error = await call().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PermissionDeniedError);
+      expect(error).toMatchObject({
+        status: 403,
+        code: "workspace_suspended",
+      });
+    }
+    expect(ran).toBe(false);
   });
 });
 
